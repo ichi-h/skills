@@ -29,7 +29,7 @@ Execute each step according to its own skill. The output directory
 
 | #   | Responsibility                                                                           | Skill              | Deliverable                    |
 | --- | ---------------------------------------------------------------------------------------- | ------------------ | ------------------------------ |
-| 1   | Take in the review request. Pin down the target and build the fact pack                  | `review-prepare`   | `evidence.md`, `status.before` |
+| 1   | Take in the review request. Pin down the target and build the fact pack                  | `review-prepare`   | `evidence.md`, `diff.patch`, `status.before` |
 | 2   | Perform the review. Parallel delegation by perspective and collection of findings tables | `review-dispatch`  | `report-<perspective>.md`      |
 | 3   | Integrate the review. Merge duplicate findings and decide accept/reject                  | `review-integrate` | `findings.md`                  |
 | 4   | File tickets. Group by concern and `INSERT` into `task-management`                       | `file-ticket`      | tickets / tasks                |
@@ -40,8 +40,9 @@ The whole review, end to end.
 
 | Item                    | Limit                                               |
 | ----------------------- | --------------------------------------------------- |
-| `evidence.md` size      | 60 KB / 1,200 lines                                 |
-| Diff under one review   | 800 lines (split beyond that, see `review-prepare`) |
+| `evidence.md` size      | 15 KB / 400 lines (the pack holds no diff)          |
+| Diff under one review   | 800 changed lines (split beyond, see `review-prepare`) |
+| Diff sharing            | One copy on disk (`diff.patch`), never inlined      |
 | Perspectives per wave   | 3                                                   |
 | Tool calls per reviewer | 15 (`review-dispatch` sets this in the prompt)      |
 | Wall-clock              | 10 min per wave; wait cap 15 min per reviewer       |
@@ -51,7 +52,8 @@ review into two waves.
 
 ## Done conditions
 
-- `/tmp/review-<label>/` contains `evidence.md`, `report-*.md` for every perspective, and `findings.md`
+- `/tmp/review-<label>/` contains `evidence.md`, `diff.patch`, `report-*.md` for every perspective,
+  and `findings.md`
 - Every accepted finding is linked to either a "filed ticket" or an "append to an existing ticket"
 - Every line under a reviewer's `Unconfirmed items` is either resolved or recorded in `findings.md`
   (an unconfirmed item is a gap in the fact pack, not noise — see `review-integrate`)

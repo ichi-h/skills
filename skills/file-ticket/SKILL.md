@@ -52,6 +52,9 @@ Group the accepted findings from findings.md **by concern** and file them as `ta
 ## Steps
 
 1. Group the accepted findings from findings.md by concern and build a list of ticket units.
+   findings.md holds decisions and pointers, not the reports' prose: **open the source report named on
+   an entry** (`report-<perspective>.md`) when you need the reasoning to write the ticket. That costs
+   one read of the report you need instead of a second copy of every report.
 2. Check for duplicates against existing tickets (the SQL above).
 3. Following the `task-management` schema, `INSERT` the tickets and tasks
    (`PRAGMA foreign_keys = ON;`, wrap multiple statements in `BEGIN; ... COMMIT;`,
@@ -60,9 +63,10 @@ Group the accepted findings from findings.md **by concern** and file them as `ta
 4. Append a "Filing result" section to the end of findings.md (uid / title / task count / origin).
    This lets you trace later where a finding went.
 
-5. **Write back what the review taught about the flow itself.** If the review ran over its budget
+5. **Write back what the review taught about the flow itself.** If `collect-evidence.sh` exited 3,
    or a reviewer needed material the fact pack lacked, note it next to the filing result —
-   the next `review-prepare` run starts from that note.
+   the next `review-prepare` run starts from that note. A budget overrun is a step-1 failure, not a
+   reviewer failure, so it belongs here rather than in the findings.
 
 ## Report
 

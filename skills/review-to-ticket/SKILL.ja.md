@@ -29,7 +29,7 @@ description: チケット実装を観点別に並列レビューし、指摘を�
 
 | #   | 責務                                                         | スキル             | 成果物                         |
 | --- | ------------------------------------------------------------ | ------------------ | ------------------------------ |
-| 1   | レビュー依頼の受け皿。対象の確定と事実パックの生成           | `review-prepare`   | `evidence.md`, `status.before` |
+| 1   | レビュー依頼の受け皿。対象の確定と事実パックの生成           | `review-prepare`   | `evidence.md`, `diff.patch`, `status.before` |
 | 2   | レビュー遂行。観点別の並列委譲と指摘表の回収                 | `review-dispatch`  | `report-<perspective>.md`      |
 | 3   | レビュー統合。指摘の重複統合と採否の判断                     | `review-integrate` | `findings.md`                  |
 | 4   | チケット起票。関心ごとの束ねと `task-management` への INSERT | `file-ticket`      | tickets / tasks                |
@@ -40,8 +40,9 @@ description: チケット実装を観点別に並列レビューし、指摘を�
 
 | 項目                            | 上限                                               |
 | ------------------------------- | -------------------------------------------------- |
-| `evidence.md` のサイズ          | 60 KB / 1,200 行                                   |
-| 1 回のレビューで扱う diff       | 800 行（超えるなら `review-prepare` の分割に従う） |
+| `evidence.md` のサイズ          | 15 KB / 400 行（パックに diff は入れない）          |
+| 1 回のレビューで扱う diff       | 800 変更行（超えるなら `review-prepare` の分割に従う） |
+| diff の置き場所                 | ディスク上の `diff.patch` 1 本のみ。inline しない   |
 | 1 波の観点                      | 3                                                  |
 | レビュアー 1 本のツール呼び出し | 15 回（`review-dispatch` がプロンプトに書く）      |
 | 壁時計                          | 1 波 10 分。1 本の待ち上限 15 分                   |
@@ -50,7 +51,7 @@ description: チケット実装を観点別に並列レビューし、指摘を�
 
 ## 完了条件
 
-- `/tmp/review-<label>/` に `evidence.md`・全観点の `report-*.md`・`findings.md` がある
+- `/tmp/review-<label>/` に `evidence.md`・`diff.patch`・全観点の `report-*.md`・`findings.md` がある
 - 採用指摘がすべて「起票済みチケット」か「既存チケットへの追記」に紐づいている
 - レビュアーの `未確認事項` の各行が、解消済みか `findings.md` に記録済みである
   （未確認事項は雑音ではなく事実パックの穴である。扱いは `review-integrate` を参照）
