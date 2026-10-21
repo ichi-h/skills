@@ -32,11 +32,16 @@ Pin down what is under review and build a fact pack that lets reviewers judge wi
   status.before    # `git status --porcelain` at the start, for the done check
   name-status.txt  # machine-readable file list
   shortstat.txt    # committed / uncommitted counts
+  DO_NOT_DISPATCH  # present only when the budget was exceeded; blocks despatch
 ```
 
 The collectors (`diff.patch`, `files/`, `check.log`, `shortstat.txt`, `name-status.txt`,
 `status.before`) are facts, not summaries. Their size does not count against the pack: they are read
 on demand.
+
+`status.before` and `DO_NOT_DISPATCH` are written by `collect-evidence.sh`, not by hand. A hand
+instruction ("record it in step 1") was skipped in a real run, and the done check then passed
+vacuously because the file did not exist.
 
 ## Steps
 
@@ -47,14 +52,14 @@ Receive from the user (or the orchestrator) the ticket ID under review, the bran
 
 ```bash
 mkdir -p /tmp/review-<label>
-# Keep the task-management DB (.<username>/issues.db) out of the working tree diff
-EXCLUDE="$(git rev-parse --git-path info/exclude)"
-mkdir -p "$(dirname "$EXCLUDE")"
-grep -qxF ".$(whoami)/" "$EXCLUDE" 2>/dev/null || echo ".$(whoami)/" >> "$EXCLUDE"
-git status --porcelain > /tmp/review-<label>/status.before   # record used for the done check
-git diff --shortstat "<base>...HEAD"                          # split the review if over 800 lines
+git diff --shortstat "<base>...HEAD"   # decide the split BEFORE building the pack
+git diff --numstat "<base>...HEAD"     # which concerns the split should follow
 ```
 
+- **Decide the split first, then build the pack.** Running the collector and looking at the
+  shortstat afterwards means dispatching over budget at the first sign of trouble — a real run sent
+  872 changed lines through an 800-line budget because the exit code was skipped past.
+- `status.before` is written by `collect-evidence.sh` in step 2; do not maintain it by hand.
 - Judge completion by the difference from `status.before`. Dirty state before starting is acceptable.
 - **If the target diff exceeds 800 changed lines, do not review it in one pass.** Split it and return.
   Split by concern, not by file count — a wave groups the files that one perspective has to hold in
@@ -76,6 +81,14 @@ SKILL_DIR=<this skill's directory>
   -- "bun run typecheck" "bun test"    # verification commands; decide them per project
 ```
 
+`--facts <file>` pastes a standing fact profile into §3.2. Without the flag, the profile at
+`facts/<repository-name>.md` (next to this skill) is used when it exists. A standing profile holds
+framework or library behaviour that every review in that repository would otherwise rediscover
+with a tool call. **The skill supplies the mechanism only; the profile is per-repository data** and
+must not name any particular product or path in the skill itself. See `facts/README.md` for the
+shape and what belongs there. When `review-integrate` reports a fact-pack gap that is
+repository-wide rather than ticket-specific, add it to the profile, not just to one pack.
+
 What it does:
 
 - **Writes the diff to `diff.patch` only.** `evidence.md` carries a file table, the shortstat and the
@@ -85,9 +98,13 @@ What it does:
   in §2 with its status and +/− counts so nobody wonders where it went.
 - **Fills §1 from the ticket** when `--ticket <uid>` is given and `.<username>/issues.db` exists.
   Without it, §1 keeps its TODOs.
+- **Writes `status.before`** (`git status --porcelain`) after keeping the task-management DB out of
+  the tree, so the done check has something to compare against.
 - **Enforces the budget itself**: 15 KB / 400 lines for the pack, 800 changed lines for the patch.
-  Over budget, it writes the artifacts and exits **3** — the review must then be split or the material
-  trimmed. Do not lower the budget to fit the file.
+  Over budget, it writes the artifacts, creates `<out>/DO_NOT_DISPATCH`, and exits **3** — the review
+  must then be split or the material trimmed. Do not lower the budget to fit the file. The marker is
+  what makes the limit binding: `check-prompt.sh` (review-dispatch) fails any prompt that sits next
+  to one, so ignoring the exit code does not get a wave dispatched.
 
 When a hunk alone is not enough to judge a modified file, add the relevant region with
 `scripts/evidence-ranges.py` — never the whole file:
@@ -112,6 +129,11 @@ Fill in **only what reviewers tend to re-verify**:
 - Framework or dependency behaviour where judgements diverge (down to `node_modules/pkg/file:line`)
 - **The relevant lines of the spec, quoted.** Not the location — the text. `docs/requirements.md:117-133`
   alone is an instruction to go and read it; four pasted sentences are a fact.
+- **When two or more perspectives will judge the same mechanism, the fact that decides it.**
+  Questions like "what enforces the concurrency limit" or "is an exception folded into a partial
+  failure" are answered once if the requirement text and the framework behaviour are already there.
+  Without them each perspective infers the same thing separately, and integration ends up
+  re-arbitrating severities that the pack should have settled.
 - Explicit notes on out-of-scope items and known gaps
 
 **Always attach file:line to facts.** Without it, reviewers start "just checking", and fall into exploration mode.
@@ -120,6 +142,8 @@ Fill in **only what reviewers tend to re-verify**:
 
 ```bash
 echo "exit: $?"   # from step 2 — anything other than 0 means do not dispatch
+test -e /tmp/review-<label>/DO_NOT_DISPATCH     # must not exist
+test -f /tmp/review-<label>/status.before       # must exist (empty is valid — a clean tree at start)
 grep -c 'TODO' /tmp/review-<label>/evidence.md   # must be 0 apart from genuinely out-of-scope items
 wc -c -l /tmp/review-<label>/evidence.md         # expected within 15 KB / 400 lines
 ```
@@ -136,5 +160,7 @@ budget and looks perfect. Both checks exist because each catches what the other 
 
 - `/tmp/review-<label>/evidence.md` exists, its TODOs are filled in, and `collect-evidence.sh` exited 0
 - `/tmp/review-<label>/diff.patch` exists (the reviewers will read it)
-- `/tmp/review-<label>/status.before` has been recorded
+- `/tmp/review-<label>/status.before` has been recorded by the collector (and is non-empty when the
+  tree was dirty)
+- `/tmp/review-<label>/DO_NOT_DISPATCH` does not exist
 - **There are no changes in the diff**

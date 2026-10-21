@@ -34,10 +34,26 @@ consolidate them into findings.md.
    | Covered by the fact pack, reviewer missed it  | Nothing; the pack was right, the prompt can name the section                                          |
    | Out of scope for this ticket                  | Move it to the "Rejected" list with the reason, so it is not re-derived next time                     |
    | A real gap in the fact pack                   | Add it to `evidence.md` **before** the next wave; it will be rediscovered by every reviewer otherwise |
+   | A gap that is true of the whole repository    | Add it to the standing profile `review-prepare/facts/<repository>.md`, not to this pack |
    | A real finding the reviewer could not confirm | Carry it into findings.md as "needs confirmation", with what would confirm it                         |
 
    **This is the feedback loop that keeps a fact pack from staying expensive.** Anything not
    written down between waves is rediscovered and re-requested by every reviewer.
+
+   Send the gap to the right place. A fact this ticket needs goes into this `evidence.md`; framework
+   or library behaviour that every ticket in the repository would need goes into the standing
+   profile (`review-prepare/facts/<repository>.md`). A gap written into one ticket's pack is paid
+   again by the next ticket; the profile is paid once.
+
+   The cost of skipping this is a reviewer inferring the answer, declaring it as inference, and
+   integration re-reading the implementation to settle it — for a fact that was the same in every
+   ticket of that repository.
+
+   **Same cause, split severities.** When several perspectives report the same cause at different
+   severities, settle the severity once here and record the cause **once** — do not file it three
+   times. Then check whether the fact that decided the severity should have been in the pack (§3.2
+   behaviour, §3.3 quoted requirement): if it should, send it to the pack or the standing profile so
+   the next wave does not repeat the arbitration.
 
 5. **Write findings.md.** Write it to `/tmp/review-<label>/findings.md` in the following form.
 
@@ -74,4 +90,10 @@ skill can jump straight to it.
 - `/tmp/review-<label>/findings.md` contains accept/reject and a reason for every finding
 - No report paragraph is copied into findings.md; each entry carries a pointer to its report
 - Every `Unconfirmed items` line is classified, with fact-pack gaps written back into `evidence.md`
+  or, when they are repository-wide, into the standing profile `review-prepare/facts/<repository>.md`
+- No cause is filed more than once because perspectives disagreed on severity
+- A wave that was dispatched over budget (a `DO_NOT_DISPATCH` exists yet reports exist, or the pack
+  is over 15 KB / 400 lines) is recorded in findings.md with its impact. "No harm done" alone is not
+  enough — that is exactly the silent-failure pattern, and passing over it silently means the same
+  judgement is made again next time
 - **There are no changes in the diff**

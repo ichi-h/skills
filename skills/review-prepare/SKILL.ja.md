@@ -31,10 +31,15 @@ description: 並列レビューの前準備。レビュー対象の diff を確�
   status.before    # 開始時の `git status --porcelain`（完了判定用）
   name-status.txt  # 機械可読なファイル一覧
   shortstat.txt    # コミット済み / 未コミットの行数
+  DO_NOT_DISPATCH  # 予算超過時だけ存在する。投入を塞ぐマーカー
 ```
 
 `diff.patch`、`files/`、`check.log`、`shortstat.txt`、`name-status.txt`、`status.before` は
 要約ではなく事実そのものである。サイズはパックの予算に数えない（必要時に読むだけ）。
+
+`status.before` と `DO_NOT_DISPATCH` は `collect-evidence.sh` が書く。手作業で作らない。
+「手順 1 で取る」という手順書だけの指示は実際の実行で抜け、ファイルが存在しないために
+完了判定が空振りで通った。
 
 ## 手順
 
@@ -45,14 +50,14 @@ description: 並列レビューの前準備。レビュー対象の diff を確�
 
 ```bash
 mkdir -p /tmp/review-<label>
-# タスク管理 DB（.<ユーザー名>/issues.db）を作業ツリーの差分から外す
-EXCLUDE="$(git rev-parse --git-path info/exclude)"
-mkdir -p "$(dirname "$EXCLUDE")"
-grep -qxF ".$(whoami)/" "$EXCLUDE" 2>/dev/null || echo ".$(whoami)/" >> "$EXCLUDE"
-git status --porcelain > /tmp/review-<label>/status.before   # 完了判定に使う記録
-git diff --shortstat "<base>...HEAD"                          # 800 行超ならレビューを分割する
+git diff --shortstat "<base>...HEAD"   # パックを作る前に分割を決める
+git diff --numstat "<base>...HEAD"     # どの関心で切るかの材料
 ```
 
+- **分割を先に決め、パックは後で作る。** 収集してから shortstat を見る順序だと、
+  まずいと気づいた時点で既に超過したまま投げる流れになる —— 実際に 872 変更行が
+  800 行予算のまま投入され、exit code は読み飛ばされた。
+- `status.before` は手順 2 の `collect-evidence.sh` が書く。手で管理しない。
 - `status.before` との差分で完了判定する。開始前の dirty は許容。
 - **対象 diff が 800 行超なら 1 回でレビューしない。** 分割して戻す。
   分割の単位はファイル数ではなく関心ごと。1 つの観点が同時に頭に置くファイル群を 1 波にする
@@ -74,6 +79,14 @@ SKILL_DIR=<このスキルのディレクトリ>
   -- "bun run typecheck" "bun test"    # 検証コマンド。プロジェクトごとに決める
 ```
 
+`--facts <file>` は定型事実のプロファイルを §3.2 に貼る。指定が無ければ
+`facts/<リポジトリ名>.md`（このスキルの隣）があればそれを使う。定型プロファイルは、
+そのリポジトリのどのレビューでも毎回確かめ直すことになるフレームワーク・ライブラリの挙動を
+書く場所である。**スキルが持つのは仕組みだけで、プロファイルはリポジトリごとのデータ**
+であり、スキル側に特定のプロダクト名やパスを書かない。形と何を書くかは `facts/README.md`。
+`review-integrate` が「パックの穴」として挙げた内容がチケット固有でなくリポジトリ全体に
+効くなら、1 回のパックではなくこのプロファイルに足す。
+
 スクリプトの挙動:
 
 - **diff は `diff.patch` にだけ書く。** `evidence.md` にはファイル表・shortstat・変更行数だけを載せる。
@@ -82,9 +95,13 @@ SKILL_DIR=<このスキルのディレクトリ>
   状態と +/− 行数付きで 1 行ずつ残す。「どこへ消えたか」を誰も考えなくて済む。
 - **`--ticket <uid>` があれば §1 をチケットから埋める**（`.<ユーザー名>/issues.db` がある場合）。
   無ければ §1 は TODO のまま残る。
+- **`status.before` を書く**（`git status --porcelain`）。タスク管理 DB を作業ツリーの差分から
+  外したうえで記録するので、完了判定に比較対象ができる。
 - **予算はスクリプト自身が強制する**: パック 15 KB / 400 行、パッチ 800 変更行。
-  超過時は生成物を書いたうえで **exit 3** を返す。レビューを分割するか素材を削ること。
-  予算を下げてファイルに合わせるのは禁止。
+  超過時は生成物を書いたうえで `<out>/DO_NOT_DISPATCH` を置き、**exit 3** を返す。
+  レビューを分割するか素材を削ること。予算を下げてファイルに合わせるのは禁止。
+  このマーカーが効かせる仕組みや —— `check-prompt.sh`（review-dispatch）が隣に
+  `DO_NOT_DISPATCH` があるプロンプトを必ず落とすので、exit code を無視しても投入できない。
 
 変更ファイルのハンクだけでは判断できないときは、`scripts/evidence-ranges.py` で該当領域だけを
 足す。全文は足さない。
@@ -108,6 +125,10 @@ git -c core.quotePath=false diff --no-color "<base>...HEAD" -- docs/operations.m
 - 実際に動かして確認した挙動（実行ログの該当行）
 - 判断が割れるフレーム・依存の挙動（`node_modules/pkg/file:line` まで）
 - **仕様書の該当行の本文。** 場所ではなく文を貼る。貼られた 4 文は事実になる。
+- **2 つ以上の観点が同じ仕組みを判定するとき、判定を決める事実。** 「並列度の上限は何で
+  担保するか」「例外は部分失敗に畳まれるか」のような問いは、要件文とフレームワーク挙動を
+  先に置けば 1 回で済む。置かないと各観点が同じ推論を別々に行い、統合がパックで決まるはずの
+  重大度を付け直すことになる。
 - 対象外・既知の未対応の明示
 
 **事実には必ず file:line を付ける。** 無いとレビュアーは「念のため確認」を始め、探索モードに落ちる。
@@ -116,6 +137,8 @@ git -c core.quotePath=false diff --no-color "<base>...HEAD" -- docs/operations.m
 
 ```bash
 echo "exit: $?"   # 手順 2 の終了コード。0 以外なら投入しない
+test -e /tmp/review-<label>/DO_NOT_DISPATCH     # 存在してはいけない
+test -f /tmp/review-<label>/status.before       # 存在すること（空でも可）
 grep -c 'TODO' /tmp/review-<label>/evidence.md   # 0 であること（真に対象外の項目を除く）
 wc -c -l /tmp/review-<label>/evidence.md         # 15 KB / 400 行以内が目安
 ```
@@ -132,5 +155,6 @@ TODO の残ったパックは予算より小さく、見た目は完璧だから
 
 - `/tmp/review-<label>/evidence.md` が存在し、TODO が埋まっており、`collect-evidence.sh` が exit 0 した
 - `/tmp/review-<label>/diff.patch` が存在する（レビュアーはこれを読む）
-- `/tmp/review-<label>/status.before` が記録済み
+- `/tmp/review-<label>/status.before` が収集スクリプトによって記録済み（開始時に dirty だったなら非空）
+- `/tmp/review-<label>/DO_NOT_DISPATCH` が存在しない
 - **diff に変更が無い**

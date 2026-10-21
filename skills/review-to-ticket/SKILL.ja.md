@@ -21,18 +21,26 @@ description: チケット実装を観点別に並列レビューし、指摘を�
 - **上限を超えたら進めない。** 素材を削るか 2 波に割る。予算を超えたレビューも
   レポートは出てしまうので、失敗は静かに起きる。上限はレビュアーではなく
   オーケストレータが守る。
+- **レビュアーは 1 ターンで終わらせる。** 待つのは 1 コール、回収は
+  `report-<perspective>.md` の読み出し 1 回。表をファイルに書かせる 2 回目のプロンプトは、
+  プロンプトと文脈の再送であり、波全体のコストを上回る。
+- **配管はスクリプトに持たせる。** `status.before`・予算超過マーカー・プロンプトのゲートは
+  手順書の指示ではなく実行されるコードにする。「手順 1 で取る」と書いただけのものは
+  実際の実行で抜け、ファイルが無いために完了判定が空振りで通った。
+- **静かに失敗した事実は残す。** 予算超過のまま投入した、`DO_NOT_DISPATCH` を無視した、
+  といった事実は「実害なし」で流さず findings に 1 行残す。次回の同じ判断を止めるのは記録だけ。
 
 ## フロー
 
 各ステップをそれぞれのスキルに従って実行する。出力ディレクトリ
 `/tmp/review-<label>/` は全ステップで共通に使う。
 
-| #   | 責務                                                         | スキル             | 成果物                                       |
-| --- | ------------------------------------------------------------ | ------------------ | -------------------------------------------- |
-| 1   | レビュー依頼の受け皿。対象の確定と事実パックの生成           | `review-prepare`   | `evidence.md`, `diff.patch`, `status.before` |
-| 2   | レビュー遂行。観点別の並列委譲と指摘表の回収                 | `review-dispatch`  | `report-<perspective>.md`                    |
-| 3   | レビュー統合。指摘の重複統合と採否の判断                     | `review-integrate` | `findings.md`                                |
-| 4   | チケット起票。関心ごとの束ねと `task-management` への INSERT | `file-ticket`      | tickets / tasks                              |
+| #   | 責務                                                         | スキル             | 成果物                                                                       |
+| --- | ------------------------------------------------------------ | ------------------ | ---------------------------------------------------------------------------- |
+| 1   | レビュー依頼の受け皿。対象の確定と事実パックの生成           | `review-prepare`   | `evidence.md`, `diff.patch`, `status.before`（`DO_NOT_DISPATCH` が無いこと） |
+| 2   | レビュー遂行。観点別の並列委譲と指摘表の回収                 | `review-dispatch`  | `report-<perspective>.md`                                                    |
+| 3   | レビュー統合。指摘の重複統合と採否の判断                     | `review-integrate` | `findings.md`                                                                |
+| 4   | チケット起票。関心ごとの束ねと `task-management` への INSERT | `file-ticket`      | tickets / tasks                                                              |
 
 ## 予算
 
@@ -51,8 +59,12 @@ description: チケット実装を観点別に並列レビューし、指摘を�
 
 ## 完了条件
 
-- `/tmp/review-<label>/` に `evidence.md`・`diff.patch`・全観点の `report-*.md`・`findings.md` がある
+- `/tmp/review-<label>/` に `evidence.md`・`diff.patch`・`status.before`・全観点の `report-*.md`・
+  `findings.md` がある
+- `/tmp/review-<label>/DO_NOT_DISPATCH` が存在しない（予算超過時だけ作られ、
+  `check-prompt.sh` がその隣のプロンプトの投入を拒む）
 - 採用指摘がすべて「起票済みチケット」か「既存チケットへの追記」に紐づいている
 - レビュアーの `未確認事項` の各行が、解消済みか `findings.md` に記録済みである
   （未確認事項は雑音ではなく事実パックの穴である。扱いは `review-integrate` を参照）
-- **diff に変更が無い**（`git status` が `status.before` と同じ）
+- **diff に変更が無い**（`git status` が `status.before` と同じ）。`status.before` は
+  `collect-evidence.sh` が書くので、この判定には比較対象がある

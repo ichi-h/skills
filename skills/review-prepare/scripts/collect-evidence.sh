@@ -10,7 +10,7 @@
 # runs (45.6 KB of 45.6 KB) and is what made reviewers re-read the whole context.
 #
 # Usage:
-#   collect-evidence.sh <base-ref> [output-directory] [--ticket <uid>] [-- "<verification command>" ...]
+#   collect-evidence.sh <base-ref> [output-directory] [--ticket <uid>] [--facts <file>] [-- "<verification command>" ...]
 #
 # Examples:
 #   collect-evidence.sh origin/main /tmp/review-tk01 --ticket t008
@@ -20,6 +20,10 @@
 # --ticket <uid> fills §1 from the task-management DB (.<username>/issues.db) when
 # the file exists; without it, §1 keeps its TODO placeholders.
 #
+# --facts <file> pastes a standing fact profile into §3.2 (framework behaviour that
+# costs every reviewer a tool call to rediscover). Without the flag, the profile at
+# <this skill>/facts/<repository-name>.md is used when it exists.
+#
 # Verification commands are one command per argument. Pass several after `--`.
 # A second or later `--` is rejected (being interpreted as a command name would cause an accident).
 #
@@ -28,10 +32,18 @@
 #   <out>/diff.patch    Raw diff (the only copy of the diff)
 #   <out>/files/        Full text of changed files
 #   <out>/check.log     Log of verification commands (full text)
+#   <out>/status.before `git status --porcelain` at the start (for the done check)
+#   <out>/DO_NOT_DISPATCH  Present only when the budget was exceeded
 #
 # Notes:
 #   - This script only gathers facts; it makes no judgements.
 #     The orchestrator must fill in the "Verified facts" section.
+#   - status.before is written by this script, not by hand: the earlier instruction
+#     ("record it in step 1") was skipped in a real run and made the done check
+#     unverifiable.
+#   - Over budget, the script leaves a DO_NOT_DISPATCH marker. check-prompt.sh refuses
+#     to pass any prompt that sits next to one, so an over-budget wave cannot be
+#     dispatched even if the exit code is ignored.
 #   - Lockfiles and build artefacts are excluded from the diff and the full text;
 #     they are listed in §2 with the reason instead.
 #   - Verification commands differ per project, so they are not hardcoded here.
@@ -44,7 +56,8 @@
 #   0  evidence.md is within budget (15 KB / 400 lines) and the diff is within 800 changed lines
 #   2  usage error
 #   3  budget exceeded: the pack and the patch were written, but do not dispatch
-#      (split the review into waves or trim the material; do not raise the budget)
+#      (split the review into waves or trim the material; do not raise the budget).
+#      <out>/DO_NOT_DISPATCH is also created; it is removed by the next run of this script.
 
 set -euo pipefail
 
@@ -66,11 +79,16 @@ if [ $# -gt 0 ] && [ "${1#--}" = "$1" ]; then
 fi
 
 TICKET_UID=""
+FACTS_FILE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --ticket)
       [ $# -ge 2 ] || { echo "error: --ticket requires a uid" >&2; exit 2; }
       TICKET_UID="$2"; shift 2
+      ;;
+    --facts)
+      [ $# -ge 2 ] || { echo "error: --facts requires a path" >&2; exit 2; }
+      FACTS_FILE="$2"; shift 2
       ;;
     --)
       shift
@@ -110,6 +128,22 @@ OUT="$(abspath "$OUT")"
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 
+# Standing fact profile: framework/library behaviour that every reviewer in this
+# repository would otherwise rediscover with a tool call. Explicit --facts wins;
+# otherwise look for facts/<repository-name>.md next to this script. The skill ships
+# the mechanism only - the profile files are per-repository data (see facts/README.md).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -z "$FACTS_FILE" ]; then
+  _repo_name="$(basename "$REPO_ROOT")"
+  if [ -f "$SCRIPT_DIR/../facts/$_repo_name.md" ]; then
+    FACTS_FILE="$SCRIPT_DIR/../facts/$_repo_name.md"
+  fi
+fi
+if [ -n "$FACTS_FILE" ] && [ ! -f "$FACTS_FILE" ]; then
+  echo "error: --facts file not found: $FACTS_FILE" >&2
+  exit 2
+fi
+
 case "$OUT/" in
   "$REPO_ROOT"/*)
     echo "error: output directory is inside the repository ($OUT). Reviews must not dirty the working tree; specify a path under /tmp" >&2
@@ -127,6 +161,20 @@ BASE_SHA_SHORT="$(git rev-parse --short "$BASE_SHA")"
 # Remove leftovers from a previous run (prevents stale full texts from mixing in when rerunning with a different base)
 rm -rf "$OUT/files"
 mkdir -p "$OUT/files"
+
+# The dispatch gate belongs to the previous attempt. A rerun that is still over budget
+# recreates it below; one that fits must not inherit it.
+rm -f "$OUT/DO_NOT_DISPATCH"
+
+# Record the starting working tree here, mechanically. Written as an instruction in the
+# skill it was skipped in a real run, and the done check ("git status equals status.before")
+# then passed vacuously because the file did not exist.
+{
+  EXCLUDE="$(git rev-parse --git-path info/exclude)"
+  mkdir -p "$(dirname "$EXCLUDE")"
+  grep -qxF ".$(whoami)/" "$EXCLUDE" 2>/dev/null || echo ".$(whoami)/" >>"$EXCLUDE"
+} || echo "WARN: could not update $EXCLUDE; the task-management DB may show up in status.before" >&2
+git status --porcelain >"$OUT/status.before"
 
 # By default git quotes non-ASCII paths in "..." form. Disable that, and read with
 # -z (NUL separated) so that paths containing tabs or newlines do not break.
@@ -508,7 +556,16 @@ ticket_section() {
   echo
   echo '### 3.2 Framework / dependency behaviour (points where judgements diverge)'
   echo
-  echo '- <!-- TODO: e.g. library X behaves as Y. Evidence: node_modules/pkg/file:line -->'
+  if [ -n "$FACTS_FILE" ]; then
+    echo "Standing facts for this repository (\`$(basename "$FACTS_FILE")\`). These were measured once;"
+    echo 'do not re-derive them and do not send a reviewer to the repository for them.'
+    echo
+    cat "$FACTS_FILE"
+    echo
+    echo '- Further framework behaviour not listed above: <!-- TODO: add only what this diff needs -->'
+  else
+    echo '- <!-- TODO: e.g. library X behaves as Y. Evidence: node_modules/pkg/file:line -->'
+  fi
   echo
   echo '### 3.3 Relevant parts of the spec'
   echo
@@ -558,8 +615,19 @@ echo "  Patch: $DIFF_FILE (${DIFF_CHANGED_LINES} changed lines, budget 800)"
 echo "  Verification log: $CHECK_LOG (${LOG_LINES} lines)"
 
 if [ "$OVER" -eq 1 ]; then
+  # Leave a marker in the artifact directory. The exit code is easy to skip past (a real run
+  # dispatched a 872-line wave over an 800-line budget); a file that check-prompt.sh refuses
+  # to pass next to a prompt is not.
+  {
+    echo "Budget exceeded on $(date '+%Y-%m-%d %H:%M:%S')."
+    echo "evidence.md: ${EVIDENCE_BYTES} bytes / ${EVIDENCE_LINES} lines (budget 15 KB / 400 lines)"
+    echo "diff.patch: ${DIFF_CHANGED_LINES} changed lines (budget 800)"
+    echo 'Split the review into waves by concern, or trim the material. Do not raise the budget.'
+    echo 'Remove this file only after the wave has been split and the pack regenerated within budget.'
+  } >"$OUT/DO_NOT_DISPATCH"
   echo
   echo "DO NOT DISPATCH: the budget is exceeded. Split the review or trim the material." >&2
+  echo "Wrote ${OUT}/DO_NOT_DISPATCH; check-prompt.sh will refuse every prompt in this directory." >&2
   echo "Next: fill in the TODOs of \"## 3\" in evidence.md after the split, then hand it to the reviewers." >&2
   exit 3
 fi

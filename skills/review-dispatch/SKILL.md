@@ -17,6 +17,12 @@ description: A skill that delegates perspective-based reviews to agents in paral
   anything that can start in parallel).
 - **Wait in one call for all reviewers.** No `sleep` polling; wait for the completion notification
   (`--wait`). Waiting per reviewer blocks on the slowest while the finished ones sit uncollected.
+  "One call" means one tool invocation that returns when all are settled — not "one wait command
+  with several arguments". See step 3 for the per-harness form.
+- **The reviewer writes its own report file.** The collection step is a read of
+  `report-<perspective>.md`, not a second prompt. Do not instruct a reviewer to "now write the table
+  to a file": the prompt already names the file, and a second round trip per reviewer costs more
+  than the whole wave.
 - **The budget goes into the prompt.** A number that is only written here moves nothing; the
   reviewer stops at a limit only if the text it receives says one.
 - **A perspective is a judgement, not a work order.** A checklist of enumerated verification jobs
@@ -38,8 +44,20 @@ description: A skill that delegates perspective-based reviews to agents in paral
 
 2. **Build the prompts.** One prompt per perspective. Start from `templates/prompt.md`, fill in
    every `{{...}}`, and save it to `/tmp/review-<label>/prompt-<perspective>.md`.
-   The template already carries the budget block, the prohibitions, and the output format, so the
-   parts below are what you have to supply — the budget block is not optional:
+   `templates/prompt.md` already carries the budget block, the prohibitions, and the output format,
+   so do not retype them — substitute the placeholders and supply the perspective checklist:
+
+   | Placeholder     | Value                                                        |
+   | --------------- | ------------------------------------------------------------ |
+   | `{{PERSPECTIVE}}` | Code / Security / Tests / Architecture / Spec              |
+   | `{{TICKET}}`      | the ticket uid                                             |
+   | `{{EVIDENCE}}`    | `/tmp/review-<label>/evidence.md`                          |
+   | `{{DIFF}}`        | `/tmp/review-<label>/diff.patch`                           |
+   | `{{FILES}}`       | `/tmp/review-<label>/files`                                |
+   | `{{REPORT}}`      | `/tmp/review-<label>/report-<perspective>.md`              |
+   | `{{CHECKLIST}}`   | at most 4 judgement questions for the perspective          |
+
+   The budget block is not optional; if you write the prompt from scratch anyway, it must contain this:
 
    ```text
    ## 予算 / Budget
@@ -50,22 +68,26 @@ description: A skill that delegates perspective-based reviews to agents in paral
    ## 禁止 / Prohibited
    - evidence.md の「3. Verified facts」を再検証しない。§3.1 が報告しているコマンドは再実行しない。
    - インタプリタ・プローブを走らせない（node -e / python -c / tsx / sqlite3 / テストランナー）。
-   - ファイルを作成・編集・削除しない（作業ツリー内の一時ファイルも含む）。
+   - ファイルの作成・編集・削除は成果物ディレクトリの report-<perspective>.md 1 つだけ。
+     それ以外のファイルは作らない（作業ツリー内の一時ファイルも含む）。
    - evidence.md とリポジトリの再探索をしない。§3 に無いことは「未確認事項」に書く。
    ```
 
-   Then the perspective itself:
+   The prohibition used to ban file creation outright while the orchestrator asked for a file
+   afterwards. The reviewer cannot both obey and deliver, and the collection step turned into a
+   second prompt. Name the report file in the prompt (`{{REPORT}}` =
+   `/tmp/review-<label>/report-<perspective>.md`) and carve it out of the prohibition;
+   `check-prompt.sh` fails a prompt that lacks either.
 
-   - The target ({{TICKET}}) and the path to evidence.md ({{EVIDENCE}})
-   - The diff path ({{DIFF}} = `/tmp/review-<label>/diff.patch`) and the full-text directory
-     ({{FILES}} = `/tmp/review-<label>/files/`). The pack carries no diff, so name both or the
-     reviewer has to guess where a finding's line came from.
-   - The perspective-specific checklist — **at most 4 items**, phrased as questions to judge, not
-     as steps to execute. No enumerated line numbers, no lists of default values, no
-     "confirm that X really blocks Y" — those are exploration seeds.
-   - The range of files that may be read (evidence.md, diff.patch for cited lines, files/ for full
-     text; anything else goes under `Unconfirmed items`)
-   - The output format (the findings table below)
+   The `{{DIFF}}` and `{{FILES}}` substitutions matter even though the pack carries no diff: without
+   them the reviewer guesses where a finding's line came from. The checklist is **at most 4 items**,
+   phrased as questions to judge, not as steps to execute — no enumerated line numbers, no lists of
+   default values, no "confirm that X really blocks Y"; those are exploration seeds.
+
+   Severity is graded **from the reviewer's own perspective**. Three perspectives reporting the same
+   cause as NITS / NITS / IMO is a perspective-design signal, not three findings: leave the final
+   severity to the integration step instead of asking each reviewer to pre-arbitrate. The template
+   carries the line; keep it.
 
    ```text
    | Severity | Location | Finding | Evidence | Suggested fix |
@@ -83,33 +105,55 @@ description: A skill that delegates perspective-based reviews to agents in paral
      (at most 3 lines).
 
    Before dispatching, gate the prompts. The script fails on an unsubstituted placeholder, a missing
-   budget, a missing escape hatch, an absent probe ban, and a missing evidence path; it warns when
-   the checklist has turned into an enumerated work order:
+   budget, a missing escape hatch, an absent probe ban, a missing evidence path, a missing
+   `report-<perspective>.md` path, a prohibition that does not carve out the artifact directory, an
+   unscoped severity line, and on an adjacent `DO_NOT_DISPATCH` from `collect-evidence.sh`:
 
    ```bash
    SKILL_DIR=<this skill's directory>
    "$SKILL_DIR/scripts/check-prompt.sh" /tmp/review-<label>/prompt-*.md   # exit 1 = do not dispatch
    ```
 
-   Fix what it reports rather than dispatching around it.
+   It reports every failing check at once. Fix what it reports rather than dispatching around it.
+   The gate is what makes the 800-line / 15 KB budget real: the collector's exit 3 is a value a shell
+   pipeline drops without noticing, while a prompt that the gate refuses cannot be launched at all.
 
-3. **Launch in parallel.** Start as many reviewers as there are perspectives, **in a single call**.
-   When they finish, save the results (the result files from the completion notifications) to
-   `/tmp/review-<label>/report-<perspective>.md`.
+   The gate's own rules are covered by `scripts/self-test.sh` (each rule gets a fixture that must
+   pass and one that must fail). Run it after editing `check-prompt.sh`; a rule that silently stops
+   firing is worse than no rule, because it looks like a check.
 
-   Wait for all of them in one call, not one by one:
+3. **Launch in parallel and wait once.** Start as many reviewers as there are perspectives in one
+   tool call, and collect `report-<perspective>.md` when all of them settle.
+
+   **herdr**: `agent wait` takes exactly one `<TARGET>` (`herdr agent wait rev-code rev-spec` is a
+   usage error, `unexpected argument`). Bundle them in one shell invocation instead — the background
+   `&` plus a single `wait` is the one call:
 
    ```bash
-   # herdr: the wait takes several targets; a per-reviewer wait blocks on the slower one
-   # while the others sit finished and uncollected
-   herdr agent wait rev-code rev-spec rev-tests --timeout 900000
+   # One tool call. Each `agent prompt --wait` returns when that reviewer settles; the shell `wait`
+   # joins them. Name every reviewer: an unnamed pane (wS:pG) cannot be waited on at all.
+   for p in code spec tests; do
+     herdr agent prompt "rev-$p" "$(cat /tmp/review-<label>/prompt-$p.md)" --wait --timeout 900000 &
+   done
+   wait
    ```
 
-   Same with subagents: one `subagent` workflow call with one child per perspective, or a single
-   wait for the batch. **Do not `sleep` and poll**, and do not read a reviewer's pane while it is
-   still `working`.
+   Confirm the names first; a pane that was never named cannot be collected:
 
-4. **Confirm collection.** Done once the reports for all perspectives are in. Do not judge the content.
+   ```bash
+   herdr agent list   # every reviewer must show a `name`
+   ```
+
+   **subagent**: one workflow call with one child per perspective, or one wait for the batch.
+
+   **Do not `sleep` and poll.** Do not read a reviewer's pane while it is still `working`, and do
+   not wake a finished reviewer a second time to ask for its table — it already wrote
+   `report-<perspective>.md`.
+
+4. **Collect.** Read `report-<perspective>.md` once per perspective. If a reviewer was dispatched
+   without the report path (an older prompt), recover it with one `agent read <name> --source
+   recent-unwrapped`, strip the pane decoration, and write the file yourself — once, not per
+   reviewer as a second prompt. Done when every report is on disk. Do not judge the content.
 
 ## Budget
 
@@ -124,13 +168,20 @@ description: A skill that delegates perspective-based reviews to agents in paral
    reviewer (the collector exits 3 on overrun, so an oversized pack means the exit code was ignored).
 3. **Did the checklist enumerate items?** More than 4 judgement questions means it became a
    work order.
-4. **Did it need material the pack lacked?** That is a fact pack gap — record it, feed it back into
+4. **Did each reviewer get more than one turn?** A second prompt to write the report, or an extra
+   turn to answer a question the prompt failed to answer, re-sends the whole prompt and context.
+   A measured wave paid two such round trips per reviewer; that cost more than the wave's own
+   tool calls and produced nothing. Fix the prompt, not the reviewer.
+5. **Did it need material the pack lacked?** That is a fact pack gap — record it, feed it back into
    `evidence.md` for the next run.
-5. Only then consider the model or `thinking`, and only within the table above.
+6. Only then consider the model or `thinking`, and only within the table above.
 
 A reviewer that hit the 15-call cap and answered from the pack is a success, not a truncation.
 
 ## Done conditions
 
 - `report-<perspective>.md` for every perspective exists in `/tmp/review-<label>/`
+- Every reviewer was addressed by name for the whole wave (no unnamed-pane collection)
+- Each report was written by its reviewer; no reviewer was prompted a second time to produce a file
+- `scripts/check-prompt.sh` exited 0 on the dispatched prompts
 - **There are no changes in the diff**
