@@ -1,35 +1,50 @@
 #!/usr/bin/env bash
-# Fact gathering before review. Collects the diff, the full text of changed files, and the verification log into evidence.md.
+# Fact gathering before review. Builds the judgement pack (evidence.md) and records
+# the diff on disk.
 #
-# Each fact appears exactly once: new files are inlined with line numbers (2.1), modified files
-# contribute only their hunks (2.2), and the complete text stays on disk under <out>/files/ (2.3).
-# Do not duplicate both forms.
+# evidence.md holds only what a reviewer must judge from: the ticket and its
+# acceptance criteria (§1) and the verified facts (§3). The diff itself is NOT
+# inlined: it lives in one place, <out>/diff.patch, and the full text of changed
+# files in <out>/files/. A reviewer reads the pack, then opens the patch only for
+# the lines a finding cites. Inlining the diff here was 93% of the pack in measured
+# runs (45.6 KB of 45.6 KB) and is what made reviewers re-read the whole context.
 #
 # Usage:
-#   collect-evidence.sh <base-ref> [output-directory] [-- "<verification command>" ...]
+#   collect-evidence.sh <base-ref> [output-directory] [--ticket <uid>] [-- "<verification command>" ...]
 #
 # Examples:
-#   collect-evidence.sh origin/main /tmp/review-tk01
+#   collect-evidence.sh origin/main /tmp/review-tk01 --ticket t008
 #   collect-evidence.sh origin/main /tmp/review-tk01 -- "bun run typecheck" "bun test"
-#   REVIEW_VERIFY=$'bun run typecheck\nbun test' collect-evidence.sh origin/main /tmp/review-tk01
+#   collect-evidence.sh origin/main /tmp/review-tk01 --ticket t008 -- "npm run check"
+#
+# --ticket <uid> fills §1 from the task-management DB (.<username>/issues.db) when
+# the file exists; without it, §1 keeps its TODO placeholders.
 #
 # Verification commands are one command per argument. Pass several after `--`.
 # A second or later `--` is rejected (being interpreted as a command name would cause an accident).
 #
 # Output:
-#   <out>/evidence.md   Skeleton (the "verified facts" section is filled in by a human)
-#   <out>/diff.patch    Raw diff
+#   <out>/evidence.md   Judgement pack (§1 ticket / §2 inventory / §3 verified facts)
+#   <out>/diff.patch    Raw diff (the only copy of the diff)
 #   <out>/files/        Full text of changed files
 #   <out>/check.log     Log of verification commands (full text)
 #
 # Notes:
 #   - This script only gathers facts; it makes no judgements.
 #     The orchestrator must fill in the "Verified facts" section.
+#   - Lockfiles and build artefacts are excluded from the diff and the full text;
+#     they are listed in §2 with the reason instead.
 #   - Verification commands differ per project, so they are not hardcoded here.
 #     If none are given, the log section is generated empty (this is not a failure).
 #   - Keep the output directory outside the repository. Pointing inside the repository
 #     breaks the review's done condition ("git status does not change") by yourself.
 #   - Untracked (??) files appear in neither the diff nor the full text. Run `git add -N` first.
+#
+# Exit status:
+#   0  evidence.md is within budget (15 KB / 400 lines) and the diff is within 800 changed lines
+#   2  usage error
+#   3  budget exceeded: the pack and the patch were written, but do not dispatch
+#      (split the review into waves or trim the material; do not raise the budget)
 
 set -euo pipefail
 
@@ -44,23 +59,28 @@ fi
 
 BASE="$1"; shift
 
-# If the second argument is not --, treat it as the output directory
-if [ $# -gt 0 ] && [ "$1" != "--" ]; then
+# If the second argument is not an option or --, treat it as the output directory
+OUT=""
+if [ $# -gt 0 ] && [ "${1#--}" = "$1" ]; then
   OUT="$1"; shift
-else
-  OUT="/tmp/review-$(date +%Y%m%d-%H%M%S)"
 fi
 
-if [ -z "$OUT" ]; then
-  echo "error: output directory is empty" >&2
-  usage >&2
-  exit 2
-fi
-
-if [ $# -gt 0 ]; then
-  [ "$1" = "--" ] || { echo "error: unexpected argument: $1" >&2; usage >&2; exit 2; }
-  shift
-fi
+TICKET_UID=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --ticket)
+      [ $# -ge 2 ] || { echo "error: --ticket requires a uid" >&2; exit 2; }
+      TICKET_UID="$2"; shift 2
+      ;;
+    --)
+      shift
+      break
+      ;;
+    *)
+      echo "error: unexpected argument: $1" >&2; usage >&2; exit 2
+      ;;
+  esac
+done
 
 VERIFY_CMDS=("$@")
 for cmd in "${VERIFY_CMDS[@]+"${VERIFY_CMDS[@]}"}"; do
@@ -70,6 +90,8 @@ for cmd in "${VERIFY_CMDS[@]+"${VERIFY_CMDS[@]}"}"; do
     exit 2
   fi
 done
+
+[ -n "$OUT" ] || OUT="/tmp/review-$(date +%Y%m%d-%H%M%S)"
 
 # Make the output path absolute (resolve before cd, so a relative path does not land in the repo root)
 abspath() {
@@ -114,6 +136,29 @@ STATUSES=()   # status of each line (for display)
 PATHS=()      # path for display (new path for renames)
 TARGETS=()    # paths to copy
 
+# Files whose content never decides a review. Dropping them keeps the patch small
+# and the reviewers' attention on what changed behaviour.
+is_excluded() {
+  case "$1" in
+    *lock.json|*.lock|lock.json|package-lock.json|yarn.lock|pnpm-lock.yaml|bun.lock|Cargo.lock|poetry.lock|composer.lock|go.sum|*.lockb) return 0 ;;
+    dist/*|*/dist/*|build/*|*/build/*|coverage/*|*/coverage/*|node_modules/*|*/node_modules/*) return 0 ;;
+    *.min.js|*.min.css|*.map|*.snap|*.generated.*|*.g.dart|*.pb.go) return 0 ;;
+  esac
+  return 1
+}
+
+# Human-readable reason for the exclusion (used in §2 of the pack)
+exclusion_reason() {
+  case "$1" in
+    *lock.json|*.lock|lock.json|package-lock.json|yarn.lock|pnpm-lock.yaml|bun.lock|Cargo.lock|poetry.lock|composer.lock|go.sum|*.lockb)
+      echo "lockfile" ;;
+    dist/*|*/dist/*|build/*|*/build/*|coverage/*|*/coverage/*|node_modules/*|*/node_modules/*)
+      echo "build artefact" ;;
+    *)
+      echo "generated" ;;
+  esac
+}
+
 collect() {
   # collect <diff arguments...>
   local entries=() i=0 st old new
@@ -136,17 +181,13 @@ collect() {
 }
 
 DIFF_FILE="$OUT/diff.patch"
-"${GIT_DIFF[@]}" "$BASE...HEAD" >"$DIFF_FILE"
+: >"$DIFF_FILE"
 collect "$BASE...HEAD"
 
 # Also pick up unstaged changes (prevents missing changes when the working tree has uncommitted work).
-# Reflect them not only by appending to the diff but also in name-status. Doing only one leaves
-# "files that appear in the diff but have no full text".
 UNCLEAN=0
 if ! git diff --quiet || ! git diff --cached --quiet; then
   UNCLEAN=1
-  git -c core.quotePath=false diff --no-color >>"$DIFF_FILE"
-  git -c core.quotePath=false diff --no-color --cached >>"$DIFF_FILE"
   collect            # unstaged working tree changes
   collect --cached   # staged changes
   echo "WARN: uncommitted changes were included in the diff. Committing before review is recommended" >&2
@@ -165,7 +206,6 @@ _merge_status() {
 
 # Prevent the same path from appearing twice, once as committed and once as uncommitted.
 # STATUSES and PATHS correspond by the same index, so thin them out together.
-# Paths may contain newlines or tabs, so use an associative array instead of joining with a separator.
 _dedupe_by_path() {
   local i p
   local -a path_order=() new_path=()
@@ -200,8 +240,38 @@ _dedupe_by_path() {
 }
 _dedupe_by_path
 
+# Split paths into "kept" and "excluded" (lockfiles and build artefacts).
+KEPT_PATHS=(); KEPT_STATUSES=(); EXCLUDED_PATHS=(); EXCLUDED_STATUSES=()
+for idx in "${!PATHS[@]}"; do
+  p="${PATHS[$idx]}"
+  if is_excluded "$p"; then
+    EXCLUDED_PATHS+=("$p"); EXCLUDED_STATUSES+=("${STATUSES[$idx]}")
+  else
+    KEPT_PATHS+=("$p"); KEPT_STATUSES+=("${STATUSES[$idx]}")
+  fi
+done
+PATHS=("${KEPT_PATHS[@]+"${KEPT_PATHS[@]}"}")
+STATUSES=("${KEPT_STATUSES[@]+"${KEPT_STATUSES[@]}"}")
+
+# The patch keeps the exclusions out. Rebuild it from the kept paths so that the
+# reviewer never pages through a 1,000-line lockfile hunk.
+if [ "${#PATHS[@]}" -gt 0 ]; then
+  # Build the argument list in chunks: `git diff -- a b c` (paths after one --)
+  {
+    printf '%s\0' "${PATHS[@]}"
+  } >"$OUT/.kept-paths"
+  mapfile -d '' -t KEPT_LIST <"$OUT/.kept-paths"
+  "${GIT_DIFF[@]}" "$BASE...HEAD" -- "${KEPT_LIST[@]}" >"$DIFF_FILE"
+  if [ "$UNCLEAN" -eq 1 ]; then
+    git -c core.quotePath=false diff --no-color -- "${KEPT_LIST[@]}" >>"$DIFF_FILE"
+    git -c core.quotePath=false diff --no-color --cached -- "${KEPT_LIST[@]}" >>"$DIFF_FILE"
+  fi
+  rm -f "$OUT/.kept-paths"
+else
+  : >"$DIFF_FILE"
+fi
+
 # Escape so that one line stays one entry even if a path contains tabs, newlines, or backslashes
-# (used when reading with -z. The human-readable listing has this form)
 esc_path() {
   local s="$1"
   s="${s//\\/\\\\}"
@@ -210,10 +280,27 @@ esc_path() {
   printf '%s' "$s"
 }
 
+# Changed lines in the patch (+/-), excluding context and hunk headers.
+DIFF_CHANGED_LINES="$(awk '/^(\+\+\+|---)/{next} /^[+-]/{n++} END{print n+0}' "$DIFF_FILE")"
+
 : >"$OUT/name-status.txt"
 for idx in "${!PATHS[@]}"; do
   printf '%s\t%s\n' "${STATUSES[$idx]}" "$(esc_path "${PATHS[$idx]}")" >>"$OUT/name-status.txt"
 done
+
+# Per-file line counts, used for the excluded-files lines in §2
+declare -A NUMSTAT_ADD=() NUMSTAT_DEL=()
+while IFS=$'\t' read -r a d p; do
+  [ -n "${p:-}" ] || continue
+  NUMSTAT_ADD["$p"]="${a:-0}"
+  NUMSTAT_DEL["$p"]="${d:-0}"
+done < <({
+  git diff --numstat "$BASE...HEAD"
+  if [ "$UNCLEAN" -eq 1 ]; then
+    git diff --numstat
+    git diff --numstat --cached
+  fi
+} | awk -F'\t' 'NF>=3 {k=$3; add[k]+=$1; del[k]+=$2} END{for (k in add) printf "%d\t%d\t%s\n", add[k], del[k], k}')
 
 # To keep counts consistent with diff.patch, also record the actual numbers including uncommitted changes
 {
@@ -236,11 +323,11 @@ UNTRACKED=()
 mapfile -d '' -t UNTRACKED < <(git ls-files --others --exclude-standard -z)
 UNTRACKED_COUNT="${#UNTRACKED[@]}"
 
-# Save the full text of each changed file (skip deleted files)
+# Save the full text of each changed file (skip deleted files, skip excluded ones)
 copied=0
 for target in "${TARGETS[@]+"${TARGETS[@]}"}"; do
+  is_excluded "$target" && continue
   [ -f "./$target" ] || continue
-  # Copy preserving the directory structure (renaming files would cause path collisions)
   dest="$OUT/files/$target"
   mkdir -p "$(dirname "$dest")"
   # Without `--`, cp exits abnormally on paths starting with `-`, and set -e stops everything
@@ -251,7 +338,7 @@ done
 # Verification log (continue even if it fails)
 CHECK_LOG="$OUT/check.log"
 : >"$CHECK_LOG"
-LOG_LIMIT=200
+LOG_LIMIT=120
 
 run_cmd() {
   echo "\$ $*"
@@ -296,6 +383,45 @@ status_label() {
   esac
 }
 
+# §1 from the task-management DB. A bare `docs/requirements.md:117-133` makes every
+# reviewer open the file; the ticket text pasted here is a fact.
+ticket_section() {
+  local db=".$(whoami)/issues.db" row="" uid title state desc
+  if [ -z "$TICKET_UID" ]; then
+    echo "<!-- TODO: transcribe the requirements and the ticket's acceptance criteria -->"
+    echo
+    echo "- Target ticket: <!-- TODO: the task-management uid and title. If absent from the DB, \"outside the DB (PR / branch only)\" -->"
+    echo "- Acceptance criteria:"
+    echo "  - <!-- TODO: criterion — evidence: docs/requirements.md:line / the ticket uid's description -->"
+    return
+  fi
+
+  if ! command -v sqlite3 >/dev/null 2>&1 || [ ! -f "$db" ]; then
+    echo "<!-- TODO: ${db} is missing or sqlite3 is unavailable; fill this section by hand -->"
+    echo
+    echo "- Target ticket: \`${TICKET_UID}\`"
+    return
+  fi
+
+  row="$(sqlite3 -separator $'\x1f' "$db" \
+    "SELECT uid, title, state, description FROM tickets WHERE uid='${TICKET_UID}'" 2>/dev/null || true)"
+  if [ -z "$row" ]; then
+    echo "- Target ticket: \`${TICKET_UID}\` (not found in ${db})"
+    return
+  fi
+
+  IFS=$'\x1f' read -r uid title state desc <<<"$row"
+  echo "- Target ticket: \`${uid}\` — ${title} (state=${state})"
+  echo "- Acceptance criteria (the ticket text itself; judge against this, not against the diff alone):"
+  echo
+  printf '%s\n' "$desc" | sed 's/^/  /'
+  echo
+  echo "- Tasks recorded for the ticket:"
+  sqlite3 -separator ' | ' "$db" \
+    "SELECT uid, state, title FROM tasks WHERE ticket_id=(SELECT id FROM tickets WHERE uid='${TICKET_UID}') ORDER BY id" \
+    2>/dev/null | sed 's/^/  - /' || true
+}
+
 {
   echo "# ${TICKET} review target evidence"
   echo
@@ -319,91 +445,42 @@ status_label() {
   echo
   echo "## 1. Ticket / acceptance criteria"
   echo
-  echo "<!-- TODO: transcribe the requirements and the ticket's acceptance criteria with file:line -->"
+  ticket_section
   echo
-  echo "- Target ticket: <!-- TODO: the task-management uid and title. If absent from the DB, \"outside the DB (PR / branch only)\" -->"
-  echo "- Acceptance criteria:"
-  echo "  - <!-- TODO: criterion — evidence: docs/requirements.md:line / the ticket uid's description -->"
-  echo
-  echo "## 2. Diff"
+  echo "## 2. Diff (on disk, not inlined)"
   echo
   cat "$OUT/shortstat.txt"
   echo
-  echo "Changed files:"
+  echo "Changed lines in the kept patch: ${DIFF_CHANGED_LINES} (budget 800)"
   echo
-  echo '| File | Kind |'
-  echo '|---|---|'
-  for idx in "${!PATHS[@]}"; do
-    # Replace characters that would break the table in the display only (the real path is in name-status.txt)
-    cell="$(esc_path "${PATHS[$idx]}" | sed 's/|/\\|/g' | tr -d '\r')"
-    echo "| ${cell} | $(status_label "${STATUSES[$idx]}") |"
-  done
+  echo "**The diff is not repeated here.** Read \`${DIFF_FILE}\` for the patch and"
+  echo "\`${OUT}/files/\` for the full text of changed files. Open only the lines a finding cites —"
+  echo "reading the whole patch is a tool call and a full context re-read."
   echo
-  echo 'Nothing here is repeated elsewhere in this file. Every fact appears exactly once: new'
-  echo 'files as line-numbered text, modified files as hunks. The raw patch is on disk at'
-  echo "\`${DIFF_FILE}\` if you need the unbroken form."
+  echo "Changed files (kept):"
   echo
-  echo '### 2.1 New files (full text, line-numbered)'
-  echo
-  echo 'These files did not exist at the base, so the full text is the change. Line numbers are'
-  echo 'the real ones — cite them directly instead of opening the file.'
-  echo
-  for idx in "${!PATHS[@]}"; do
-    case "${STATUSES[$idx]}" in A*) ;; *) continue ;; esac
-    path="${PATHS[$idx]}"
-    f="$OUT/files/$path"
-    if [ ! -f "$f" ]; then
-      echo "#### $(esc_path "$path")"
-      echo
-      echo '- (binary or unreadable; not inlined)'
-      echo
-      continue
-    fi
-    echo "#### $(esc_path "$path")"
+  if [ "${#PATHS[@]}" -eq 0 ]; then
+    echo "- (none)"
+  else
+    echo '| File | Kind |'
+    echo '|---|---|'
+    for idx in "${!PATHS[@]}"; do
+      cell="$(esc_path "${PATHS[$idx]}" | sed 's/|/\\|/g' | tr -d '\r')"
+      echo "| ${cell} | $(status_label "${STATUSES[$idx]}") |"
+    done
+  fi
+  if [ "${#EXCLUDED_PATHS[@]}" -gt 0 ]; then
     echo
-    # Use a fence longer than the longest run of backticks so that a ``` inside the content
-    # does not close the fence early
-    fence="$(python3 - "$f" <<'PY'
-import re, sys
-with open(sys.argv[1], 'r', encoding='utf-8', errors='replace') as fh:
-    s = fh.read()
-longest = max((len(m) for m in re.findall(r'`+', s)), default=0)
-print('`' * max(3, longest + 1))
-PY
-)"
-    echo "${fence}"
-    awk '{ printf "%6d| %s\n", NR, $0 }' "$f"
-    echo "${fence}"
+    echo "Excluded from the patch and the full text (nothing to judge in them):"
     echo
-  done
-  echo '### 2.2 Modified files (changed hunks only)'
+    for idx in "${!EXCLUDED_PATHS[@]}"; do
+      p="${EXCLUDED_PATHS[$idx]}"
+      echo "- \`$(esc_path "$p")\` ($(status_label "${EXCLUDED_STATUSES[$idx]}"), +${NUMSTAT_ADD[$p]:-0}/-${NUMSTAT_DEL[$p]:-0}) — $(exclusion_reason "$p"); see \`package.json\` / the manifest for the actual change"
+    done
+  fi
   echo
-  echo 'Full text is deliberately not included: pasting a 400-line document because 8 lines of it'
-  echo 'changed is what made reviewers read for 27 minutes. The `@@ -a,b +c,d @@` header carries'
-  echo 'the new side line numbers, so `path:line` in a finding can be derived from it.'
-  echo
-  echo 'When a finding needs lines outside these hunks, cite only what is visible here. Do not'
-  echo 'send the reviewer to the repository for it.'
-  echo
-  for idx in "${!PATHS[@]}"; do
-    case "${STATUSES[$idx]}" in A*) continue ;; esac
-    path="${PATHS[$idx]}"
-    echo "#### $(esc_path "$path")"
-    echo
-    echo '```diff'
-    {
-      git -c core.quotePath=false diff --no-color "$BASE...HEAD" -- "$path"
-      if [ "$UNCLEAN" -eq 1 ]; then
-        git -c core.quotePath=false diff --no-color -- "$path"
-        git -c core.quotePath=false diff --no-color --cached -- "$path"
-      fi
-    } | sed '/^$/d'
-    echo '```'
-    echo
-  done
-  echo '### 2.3 Full text on disk'
-  echo
-  echo "Not inlined. \`${OUT}/files/\` holds the complete text of every changed file (${copied} files)."
+  echo 'When a file is new, the patch carries it in full (every line is a `+` line), and the hunk'
+  echo 'header `@@ -0,0 +1,N @@` gives the line numbers. There is no second copy of the diff anywhere.'
   echo
   echo '## 3. Verified facts'
   echo
@@ -437,40 +514,49 @@ PY
   echo '### 3.4 Out of scope / known gaps'
   echo
   echo '- <!-- TODO: out of scope for this review / pre-existing gaps. Name the ticket or the reason. -->'
-  echo
-  echo '## 4. Notes for the review'
-  echo
-  echo "- Everything needed for the judgement is in this file. Anything not here is outside this review's scope."
-  echo '- Never re-verify section 3, and never re-run a command that section 3.1 reports: its result is already the fact.'
-  echo '- Do not run interpreters or probes (node -e, python -c, tsx, sqlite3, test runners) to settle a question.'
-  echo '- Do not create, edit, or delete any file, including scratch files in the work tree.'
-  echo '- At most 3 lines under `Unconfirmed items`, and only for facts that genuinely depend on the environment.'
-  echo '- Fixing findings is prohibited. Filing tickets is done by the orchestrator.'
 } >"$OUT/evidence.md"
 
 EVIDENCE_BYTES="$(wc -c <"$OUT/evidence.md")"
 EVIDENCE_LINES="$(wc -l <"$OUT/evidence.md")"
 
-# Budget: 60 KB / 1,200 lines (see the review-to-ticket skill). Overshooting is silent otherwise,
-# because an oversized fact pack still produces a report — just 20 minutes later.
-BUDGET_BYTES=61440
-BUDGET_LINES=1200
+# Budget: 15 KB / 400 lines for the pack, 800 changed lines for the patch.
+# Overshooting is silent otherwise, because an oversized pack still produces a report —
+# just 20 minutes later, at three reviewers' expense.
+BUDGET_BYTES=15360
+BUDGET_LINES=400
+DIFF_BUDGET=800
+OVER=0
 
 if [ "$EVIDENCE_BYTES" -gt "$BUDGET_BYTES" ] || [ "$EVIDENCE_LINES" -gt "$BUDGET_LINES" ]; then
+  OVER=1
   {
     echo
     echo "**WARN: evidence.md is ${EVIDENCE_BYTES} bytes / ${EVIDENCE_LINES} lines, over the budget"
-    echo "(60 KB / 1,200 lines).** Reviewers pay for every line with a full context re-read."
+    echo "(15 KB / 400 lines).** Reviewers pay for every line with a full context re-read."
     echo 'Split the review into two waves (see the review-prepare skill, step 1) or trim the material.'
     echo 'Do not lower the budget to fit the file.'
   } >>"$OUT/evidence.md"
-  echo "WARN: evidence.md exceeds the budget (${EVIDENCE_BYTES} bytes / ${EVIDENCE_LINES} lines > 60 KB / 1,200 lines)" >&2
-  echo "      Split the review or trim the material. Do not dispatch as is." >&2
+  echo "WARN: evidence.md exceeds the budget (${EVIDENCE_BYTES} bytes / ${EVIDENCE_LINES} lines > 15 KB / 400 lines)" >&2
 fi
 
-echo "Generated evidence: $OUT/evidence.md (${EVIDENCE_BYTES} bytes / ${EVIDENCE_LINES} lines, budget 60 KB / 1,200 lines)"
-echo "  Full text of changed files: $copied -> $OUT/files/ (referenced, not inlined)"
+if [ "$DIFF_CHANGED_LINES" -gt "$DIFF_BUDGET" ]; then
+  OVER=1
+  echo "WARN: the patch has ${DIFF_CHANGED_LINES} changed lines, over the budget (800)." >&2
+  echo "      Split the review into waves by concern (review-prepare, step 1)." >&2
+fi
+
+echo "Generated evidence: $OUT/evidence.md (${EVIDENCE_BYTES} bytes / ${EVIDENCE_LINES} lines, budget 15 KB / 400 lines)"
+echo "  Full text of changed files: $copied -> $OUT/files/"
+echo "  Patch: $DIFF_FILE (${DIFF_CHANGED_LINES} changed lines, budget 800)"
 echo "  Verification log: $CHECK_LOG (${LOG_LINES} lines)"
+
+if [ "$OVER" -eq 1 ]; then
+  echo
+  echo "DO NOT DISPATCH: the budget is exceeded. Split the review or trim the material." >&2
+  echo "Next: fill in the TODOs of \"## 3\" in evidence.md after the split, then hand it to the reviewers." >&2
+  exit 3
+fi
+
 echo
-echo "Next: fill in the TODOs of \"## 1\" and \"## 3\" in evidence.md, then hand it to the reviewers."
+echo "Next: fill in the TODOs of \"## 3\" in evidence.md, then hand it to the reviewers."
 echo "      Section 3.3 must quote the requirement text, not only its location."
