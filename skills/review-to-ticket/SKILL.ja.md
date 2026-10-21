@@ -24,12 +24,12 @@ description: チケット実装を観点別に並列レビューし、指摘を�
 各ステップをそれぞれのスキルに従って実行する。出力ディレクトリ
 `/tmp/review-<label>/` は全ステップで共通に使う。
 
-| # | 責務 | スキル | 成果物 |
-|---|---|---|---|
-| 1 | レビュー依頼の受け皿。対象の確定と事実パックの生成 | `review-prepare` | `evidence.md`, `status.before` |
-| 2 | レビュー遂行。観点別の並列委譲と指摘表の回収 | `review-dispatch` | `report-<perspective>.md` |
-| 3 | レビュー統合。指摘の重複統合と採否の判断 | `review-integrate` | `findings.md` |
-| 4 | チケット起票。関心ごとの束ねと `task-management` への INSERT | `file-ticket` | tickets / tasks |
+| #   | 責務                                                         | スキル             | 成果物                         |
+| --- | ------------------------------------------------------------ | ------------------ | ------------------------------ |
+| 1   | レビュー依頼の受け皿。対象の確定と事実パックの生成           | `review-prepare`   | `evidence.md`, `status.before` |
+| 2   | レビュー遂行。観点別の並列委譲と指摘表の回収                 | `review-dispatch`  | `report-<perspective>.md`      |
+| 3   | レビュー統合。指摘の重複統合と採否の判断                     | `review-integrate` | `findings.md`                  |
+| 4   | チケット起票。関心ごとの束ねと `task-management` への INSERT | `file-ticket`      | tickets / tasks                |
 
 ## 完了条件
 
