@@ -54,7 +54,6 @@ description: 観点別レビューをエージェントに並列委譲し、指�
    ```
 
    そのうえで観点を書く:
-
    - 対象（{{TICKET}}）と evidence.md のパス（{{EVIDENCE}}）
    - diff のパス（{{DIFF}} = `/tmp/review-<label>/diff.patch`）と全文の置き場所
      （{{FILES}} = `/tmp/review-<label>/files/`）。パックに diff は入っていないので、
