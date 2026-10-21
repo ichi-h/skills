@@ -1,7 +1,11 @@
 import { useMemo, useState, type JSX } from "react";
 import type { TaskDto, TicketDto, TicketState } from "../shared/types.ts";
 import { Markdown } from "./components/Markdown.tsx";
-import { TaskStateBadge, TicketStateBadge, ticketStateLabel } from "./components/StateBadge.tsx";
+import {
+  TaskStateBadge,
+  TicketStateBadge,
+  ticketStateLabel,
+} from "./components/StateBadge.tsx";
 import { TicketCard } from "./components/TicketCard.tsx";
 import { useBoard } from "./hooks/useBoard.ts";
 
@@ -33,7 +37,9 @@ export function App(): JSX.Element {
         ticket.uid.includes(needle) ||
         ticket.description.toLowerCase().includes(needle) ||
         ticket.tasks.some(
-          (task) => task.title.toLowerCase().includes(needle) || task.uid.includes(needle),
+          (task) =>
+            task.title.toLowerCase().includes(needle) ||
+            task.uid.includes(needle),
         )
       );
     });
@@ -47,7 +53,10 @@ export function App(): JSX.Element {
             <h1 className="text-sm font-semibold tracking-tight text-slate-100">
               task-management-viewer
             </h1>
-            <p className="truncate font-mono text-[11px] text-slate-500" title={data?.dbPath ?? ""}>
+            <p
+              className="truncate font-mono text-[11px] text-slate-500"
+              title={data?.dbPath ?? ""}
+            >
               {data?.dbPath ?? "DB を解決中…"}
             </p>
           </div>
@@ -82,9 +91,13 @@ export function App(): JSX.Element {
                   ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
                   : "border-slate-700 bg-slate-800/60 text-slate-400"
               }`}
-              title={live ? "DB の変更を監視中" : "SSE 未接続（自動更新されません）"}
+              title={
+                live ? "DB の変更を監視中" : "SSE 未接続（自動更新されません）"
+              }
             >
-              <span className={`h-1.5 w-1.5 rounded-full ${live ? "bg-emerald-400" : "bg-slate-500"}`} />
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${live ? "bg-emerald-400" : "bg-slate-500"}`}
+              />
               {live ? "ライブ" : "オフライン"}
             </span>
             <button
@@ -104,7 +117,10 @@ export function App(): JSX.Element {
                 const count =
                   item.value === "all"
                     ? data?.stats.tickets
-                      ? Object.values(data.stats.tickets).reduce((sum, value) => sum + value, 0)
+                      ? Object.values(data.stats.tickets).reduce(
+                          (sum, value) => sum + value,
+                          0,
+                        )
                       : 0
                     : (data?.stats.tickets[item.value] ?? 0);
                 return (
@@ -119,7 +135,9 @@ export function App(): JSX.Element {
                     }`}
                   >
                     {item.label}
-                    <span className="ml-1 font-mono text-slate-500">{count}</span>
+                    <span className="ml-1 font-mono text-slate-500">
+                      {count}
+                    </span>
                   </button>
                 );
               })}
@@ -137,10 +155,17 @@ export function App(): JSX.Element {
       <main className="mx-auto max-w-[1600px] px-4 py-4">
         {error && !data && (
           <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 p-4">
-            <h2 className="text-sm font-semibold text-rose-200">DB を読み込めませんでした</h2>
-            <p className="mt-1 font-mono text-xs break-all text-rose-300/90">{error}</p>
+            <h2 className="text-sm font-semibold text-rose-200">
+              DB を読み込めませんでした
+            </h2>
+            <p className="mt-1 font-mono text-xs break-all text-rose-300/90">
+              {error}
+            </p>
             <div className="mt-3 text-xs leading-relaxed text-rose-200/80">
-              <p>task-management スキルの DB（既定は .&lt;ユーザー名&gt;/issues.db）を指定して起動してください。</p>
+              <p>
+                task-management スキルの DB（既定は
+                .&lt;ユーザー名&gt;/issues.db）を指定して起動してください。
+              </p>
               <pre className="mt-2 overflow-x-auto rounded-md border border-rose-500/30 bg-slate-950/60 p-2 font-mono text-[11px]">
                 <code>bun run start --db /path/to/.&lt;user&gt;/issues.db</code>
               </pre>
@@ -152,7 +177,8 @@ export function App(): JSX.Element {
           <>
             {error && (
               <div className="mb-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
-                最新の取得に失敗しました: <span className="font-mono">{error}</span>
+                最新の取得に失敗しました:{" "}
+                <span className="font-mono">{error}</span>
               </div>
             )}
 
@@ -174,11 +200,17 @@ export function App(): JSX.Element {
           </>
         )}
 
-        {!data && !error && <p className="py-10 text-center text-xs text-slate-500">読み込み中…</p>}
+        {!data && !error && (
+          <p className="py-10 text-center text-xs text-slate-500">
+            読み込み中…
+          </p>
+        )}
       </main>
 
       <footer className="mx-auto max-w-[1600px] px-4 pb-6 text-[11px] text-slate-600">
-        {updatedAt && <span>最終取得: {new Date(updatedAt).toLocaleTimeString()}</span>}
+        {updatedAt && (
+          <span>最終取得: {new Date(updatedAt).toLocaleTimeString()}</span>
+        )}
       </footer>
     </div>
   );
@@ -195,7 +227,11 @@ function TaskTable({ tickets }: { tickets: TicketDto[] }): JSX.Element {
   );
 
   if (rows.length === 0) {
-    return <p className="py-10 text-center text-xs text-slate-500">タスクがありません。</p>;
+    return (
+      <p className="py-10 text-center text-xs text-slate-500">
+        タスクがありません。
+      </p>
+    );
   }
 
   return (
@@ -213,10 +249,18 @@ function TaskTable({ tickets }: { tickets: TicketDto[] }): JSX.Element {
         </thead>
         <tbody>
           {rows.map(({ ticket, task }) => (
-            <tr key={`${ticket.uid}-${task.uid}`} className="border-t border-slate-800/70 align-top">
+            <tr
+              key={`${ticket.uid}-${task.uid}`}
+              className="border-t border-slate-800/70 align-top"
+            >
               <td className="px-3 py-2">
-                <div className="font-mono text-[11px] text-slate-500">{ticket.uid}</div>
-                <div className="max-w-48 truncate text-slate-300" title={ticket.title}>
+                <div className="font-mono text-[11px] text-slate-500">
+                  {ticket.uid}
+                </div>
+                <div
+                  className="max-w-48 truncate text-slate-300"
+                  title={ticket.title}
+                >
                   {ticket.title}
                 </div>
                 <div className="mt-1">
@@ -224,7 +268,9 @@ function TaskTable({ tickets }: { tickets: TicketDto[] }): JSX.Element {
                 </div>
               </td>
               <td className="px-3 py-2">
-                <div className="font-mono text-[11px] text-slate-500">{task.uid}</div>
+                <div className="font-mono text-[11px] text-slate-500">
+                  {task.uid}
+                </div>
                 <div className="max-w-80 text-slate-200">{task.title}</div>
                 {task.executable && (
                   <span className="mt-1 inline-block rounded bg-sky-500/15 px-1.5 py-0.5 text-[10px] text-sky-300">
@@ -236,14 +282,20 @@ function TaskTable({ tickets }: { tickets: TicketDto[] }): JSX.Element {
                 <TaskStateBadge state={task.state} />
               </td>
               <td className="px-3 py-2 font-mono text-[11px] text-slate-400">
-                {task.blockedBy.length === 0 ? "—" : task.blockedBy.map((ref) => ref.uid).join(", ")}
+                {task.blockedBy.length === 0
+                  ? "—"
+                  : task.blockedBy.map((ref) => ref.uid).join(", ")}
               </td>
               <td className="px-3 py-2 font-mono text-[11px] text-slate-400">
-                {task.blocks.length === 0 ? "—" : task.blocks.map((ref) => ref.uid).join(", ")}
+                {task.blocks.length === 0
+                  ? "—"
+                  : task.blocks.map((ref) => ref.uid).join(", ")}
               </td>
               <td className="max-w-96 px-3 py-2">
                 <details>
-                  <summary className="cursor-pointer text-slate-500 select-none">開く</summary>
+                  <summary className="cursor-pointer text-slate-500 select-none">
+                    開く
+                  </summary>
                   <Markdown text={task.description || "（説明なし）"} />
                 </details>
               </td>
@@ -257,7 +309,12 @@ function TaskTable({ tickets }: { tickets: TicketDto[] }): JSX.Element {
 
 function StatsPanel({ tickets }: { tickets: TicketDto[] }): JSX.Element {
   const ticketCounts = useMemo(() => {
-    const counts: Record<TicketState, number> = { not_yet: 0, in_progress: 0, completed: 0, archived: 0 };
+    const counts: Record<TicketState, number> = {
+      not_yet: 0,
+      in_progress: 0,
+      completed: 0,
+      archived: 0,
+    };
     for (const ticket of tickets) counts[ticket.state] += 1;
     return counts;
   }, [tickets]);
@@ -268,7 +325,9 @@ function StatsPanel({ tickets }: { tickets: TicketDto[] }): JSX.Element {
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       <section className="rounded-xl border border-slate-800 bg-slate-900/30 p-4">
-        <h2 className="text-xs font-semibold tracking-wide text-slate-400 uppercase">チケット</h2>
+        <h2 className="text-xs font-semibold tracking-wide text-slate-400 uppercase">
+          チケット
+        </h2>
         <ul className="mt-3 space-y-2">
           {(Object.keys(ticketCounts) as TicketState[]).map((state) => (
             <li key={state} className="flex items-center gap-3">
@@ -281,7 +340,9 @@ function StatsPanel({ tickets }: { tickets: TicketDto[] }): JSX.Element {
                   }}
                 />
               </div>
-              <span className="w-8 text-right font-mono text-xs text-slate-300">{ticketCounts[state]}</span>
+              <span className="w-8 text-right font-mono text-xs text-slate-300">
+                {ticketCounts[state]}
+              </span>
             </li>
           ))}
         </ul>
@@ -296,35 +357,61 @@ function StatsPanel({ tickets }: { tickets: TicketDto[] }): JSX.Element {
         </h2>
         <ul className="mt-3 space-y-1.5">
           {executable.map((task) => {
-            const ticket = tickets.find((candidate) => candidate.tasks.includes(task));
+            const ticket = tickets.find((candidate) =>
+              candidate.tasks.includes(task),
+            );
             return (
-              <li key={task.uid} className="rounded-md border border-slate-800 bg-slate-900/60 px-2.5 py-1.5">
+              <li
+                key={task.uid}
+                className="rounded-md border border-slate-800 bg-slate-900/60 px-2.5 py-1.5"
+              >
                 <div className="flex items-center gap-2">
-                  <span className="font-mono text-[11px] text-slate-500">{task.uid}</span>
-                  <span className="min-w-0 flex-1 truncate text-xs text-slate-200" title={task.title}>
+                  <span className="font-mono text-[11px] text-slate-500">
+                    {task.uid}
+                  </span>
+                  <span
+                    className="min-w-0 flex-1 truncate text-xs text-slate-200"
+                    title={task.title}
+                  >
                     {task.title}
                   </span>
-                  {ticket && <span className="font-mono text-[10px] text-slate-500">@{ticket.uid}</span>}
+                  {ticket && (
+                    <span className="font-mono text-[10px] text-slate-500">
+                      @{ticket.uid}
+                    </span>
+                  )}
                 </div>
               </li>
             );
           })}
           {executable.length === 0 && (
-            <li className="text-xs text-slate-500">実行可能な未着手タスクはありません。</li>
+            <li className="text-xs text-slate-500">
+              実行可能な未着手タスクはありません。
+            </li>
           )}
         </ul>
       </section>
 
       <section className="rounded-xl border border-slate-800 bg-slate-900/30 p-4 lg:col-span-2">
-        <h2 className="text-xs font-semibold tracking-wide text-slate-400 uppercase">チケット別進捗</h2>
+        <h2 className="text-xs font-semibold tracking-wide text-slate-400 uppercase">
+          チケット別進捗
+        </h2>
         <ul className="mt-3 space-y-2">
           {tickets.map((ticket) => {
             const done = ticket.counts.completed + ticket.counts.canceled;
-            const percent = ticket.counts.total === 0 ? 0 : (done / ticket.counts.total) * 100;
+            const percent =
+              ticket.counts.total === 0
+                ? 0
+                : (done / ticket.counts.total) * 100;
             return (
               <li key={ticket.uid} className="flex items-center gap-3 text-xs">
-                <span className="w-10 shrink-0 font-mono text-[11px] text-slate-500">{ticket.uid}</span>
-                <span className="w-72 shrink-0 truncate text-slate-300" title={ticket.title}>
+                <span className="w-10 shrink-0 font-mono text-[11px] text-slate-500">
+                  {ticket.uid}
+                </span>
+                <span
+                  className="w-72 shrink-0 truncate text-slate-300"
+                  title={ticket.title}
+                >
                   {ticket.title}
                 </span>
                 <div className="h-1.5 flex-1 overflow-hidden rounded bg-slate-800">

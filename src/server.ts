@@ -43,7 +43,7 @@ interface RawDependency {
 class BoardReader {
   private db: Database | null = null;
 
-  constructor(readonly dbPath: string) {}
+  constructor(readonly dbPath: string) { }
 
   private connect(): Database {
     if (this.db) return this.db;
