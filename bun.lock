@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "task-management",
+      "name": "task-management-viewer",
       "dependencies": {
         "react": "^19.3.1",
         "react-dom": "^19.3.1",

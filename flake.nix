@@ -1,5 +1,5 @@
 {
-  description = "task-management viewer — task-management スキルの SQLite DB をブラウザで閲覧するビューア";
+  description = "task-management-viewer";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
