@@ -43,12 +43,12 @@ npx skills add ichi-h/task-management
 詳細は [`SKILL.md`](skills/review-to-ticket/SKILL.md)（日本語版は [`SKILL.ja.md`](skills/review-to-ticket/SKILL.ja.md)）を参照。
 このスキルは 4 つのサブスキルで構成されるオーケストレーションフローです。
 
-| スキル | 英語 | 日本語 |
-|---|---|---|
-| `review-prepare` | [`SKILL.md`](skills/review-prepare/SKILL.md) | [`SKILL.ja.md`](skills/review-prepare/SKILL.ja.md) |
-| `review-dispatch` | [`SKILL.md`](skills/review-dispatch/SKILL.md) | [`SKILL.ja.md`](skills/review-dispatch/SKILL.ja.md) |
+| スキル             | 英語                                           | 日本語                                               |
+| ------------------ | ---------------------------------------------- | ---------------------------------------------------- |
+| `review-prepare`   | [`SKILL.md`](skills/review-prepare/SKILL.md)   | [`SKILL.ja.md`](skills/review-prepare/SKILL.ja.md)   |
+| `review-dispatch`  | [`SKILL.md`](skills/review-dispatch/SKILL.md)  | [`SKILL.ja.md`](skills/review-dispatch/SKILL.ja.md)  |
 | `review-integrate` | [`SKILL.md`](skills/review-integrate/SKILL.md) | [`SKILL.ja.md`](skills/review-integrate/SKILL.ja.md) |
-| `file-ticket` | [`SKILL.md`](skills/file-ticket/SKILL.md) | [`SKILL.ja.md`](skills/file-ticket/SKILL.ja.md) |
+| `file-ticket`      | [`SKILL.md`](skills/file-ticket/SKILL.md)      | [`SKILL.ja.md`](skills/file-ticket/SKILL.ja.md)      |
 
 ## task-management viewer
 
