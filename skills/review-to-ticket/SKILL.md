@@ -1,38 +1,38 @@
 ---
 name: review-to-ticket
-description: チケット実装を観点別に並列レビューし、指摘を統合して、修正せずにチケット（課題）として起票するスキル。レビューを依頼されたとき、コードの指摘をタスクに落としたいとき、指摘を起票して引き継ぎたいときに使う。改修は行わない。単一視点で足りる小さな確認には使わない。
+description: A skill that reviews a ticket implementation from multiple perspectives in parallel, integrates the findings, and files them as tickets (issues) without fixing anything. Use it when asked to review, when you want to turn code findings into tasks, or when you want to hand findings off by filing them. It does not make changes. Do not use it for small checks that a single perspective covers.
 ---
 
-# Review to Ticket スキル
+# Review to Ticket Skill
 
-観点別のレビューを並列実行し、指摘を統合し、`task-management` のチケットとして起票する。
+Run perspective-based reviews in parallel, integrate the findings, and file them as `task-management` tickets.
 
-**このスキルの成果物はチケットである。コードは 1 行も変えない。**
+**The deliverable of this skill is tickets. Do not change a single line of code.**
 
-## 原則
+## Principles
 
-- **親（オーケストレータ）はレビューするな。** 判断はすべて子エージェントに委譲する。
-  委譲手段は問わない（subagent / tmux / herdr / その他並列実行できるものなら何でも）。
-  このスキルは下記の 4 スキルに委譲するフローを定めるだけである。
-- **探索は 1 回、判断は並列、起票は関心ごと。**
-  事実収集はこのフローの最初に 1 回だけ行い、レビュアーには判断だけをさせる。
-- **事実には必ず file:line を付ける。**
-  無いとレビュアーは「念のため確認」を始め、探索モードに落ちる。
+- **The parent (orchestrator) must not review.** All judgements are delegated to child agents.
+  The delegation mechanism does not matter (subagent / tmux / herdr / anything that can run in parallel).
+  This skill only defines the flow that delegates to the 4 skills below.
+- **Explore once, judge in parallel, file by concern.**
+  Fact gathering happens exactly once at the start of this flow; reviewers only judge.
+- **Always attach file:line to facts.**
+  Without it, reviewers start "just checking", and fall into exploration mode.
 
-## フロー
+## Flow
 
-各ステップをそれぞれのスキルに従って実行する。出力ディレクトリ
-`/tmp/review-<label>/` は全ステップで共通に使う。
+Execute each step according to its own skill. The output directory
+`/tmp/review-<label>/` is shared across all steps.
 
-| # | 責務 | スキル | 成果物 |
+| # | Responsibility | Skill | Deliverable |
 |---|---|---|---|
-| 1 | レビュー依頼の受け皿。対象の確定と事実パックの生成 | `review-prepare` | `evidence.md`, `status.before` |
-| 2 | レビュー遂行。観点別の並列委譲と指摘表の回収 | `review-dispatch` | `report-<perspective>.md` |
-| 3 | レビュー統合。指摘の重複統合と採否の判断 | `review-integrate` | `findings.md` |
-| 4 | チケット起票。関心ごとの束ねと `task-management` への INSERT | `file-ticket` | tickets / tasks |
+| 1 | Take in the review request. Pin down the target and build the fact pack | `review-prepare` | `evidence.md`, `status.before` |
+| 2 | Perform the review. Parallel delegation by perspective and collection of findings tables | `review-dispatch` | `report-<perspective>.md` |
+| 3 | Integrate the review. Merge duplicate findings and decide accept/reject | `review-integrate` | `findings.md` |
+| 4 | File tickets. Group by concern and `INSERT` into `task-management` | `file-ticket` | tickets / tasks |
 
-## 完了条件
+## Done conditions
 
-- `/tmp/review-<label>/` に `evidence.md`・全観点の `report-*.md`・`findings.md` がある
-- 採用指摘がすべて「起票済みチケット」か「既存チケットへの追記」に紐づいている
-- **diff に変更が無い**（`git status` が `status.before` と同じ）
+- `/tmp/review-<label>/` contains `evidence.md`, `report-*.md` for every perspective, and `findings.md`
+- Every accepted finding is linked to either a "filed ticket" or an "append to an existing ticket"
+- **There are no changes in the diff** (`git status` is the same as `status.before`)

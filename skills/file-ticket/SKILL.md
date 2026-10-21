@@ -1,67 +1,68 @@
 ---
 name: file-ticket
-description: 採用した指摘を関心ごとに束ね、task-management のチケットとして起票するスキル。スキーマ操作は task-management スキルに従う。
+description: A skill that groups accepted findings by concern and files them as task-management tickets. Follow the task-management skill for schema operations.
 ---
 
-# File Ticket スキル
+# File Ticket Skill
 
-findings.md の採用指摘を**関心ごとに束ねて**、`task-management` のチケットとして起票する。
+Group the accepted findings from findings.md **by concern** and file them as `task-management` tickets.
 
-**このスキルの成果物はチケット（tickets / tasks の INSERT）である。コードは 1 行も変えない。**
+**The deliverable of this skill is tickets (INSERTs into tickets / tasks). Do not change a single line of code.**
 
-## 原則
+## Principles
 
-- 起票の単位は**指摘 1 件ではなく関心 1 つ**（`1 チケット = 1 課題 = 1 PR`）。
-  同じ原因・同じファイル・同じ設計判断に由来する指摘は 1 つのチケットに束ねる。
-  目安は 1 チケット 2〜6 タスク。互いに独立した修正（別モジュールの別バグ、
-  観点違い、リスク違い）は分ける。
-- チケットの `description` は課題三要素（`## 何が問題か` / `## なぜ解決するか` /
-  `## 解決の方針`）で構成する。見出しは固定。
-  - 何が問題か: 観測できる現象を `path:line` 付きで。意見を書かない。
-  - なぜ解決するか: 放置コスト（データ破損、将来の変更コスト）。主観は書かない。
-  - 解決の方針: 直す場所と層。方針が決まらないなら起票しない（「方針を決める」チケットにする）。
-- タスクは「全完了で課題が解決される」粒度で、実行可能な順に並べる。
-  基本形: 1. 再現テスト → 2. 本体修正 → 3. 呼び出し側 → 4. 回帰確認。
-  依存は本当にあるときだけ張り、張ったらサイクルチェックする（`task-management` 参照）。
-- **重複を避ける。** 起票前に同じ関心が既に DB に無いか確認する。
+- The unit of filing is **one concern, not one finding** (`1 ticket = 1 issue = 1 PR`).
+  Findings that come from the same cause, the same file, or the same design decision are grouped into one ticket.
+  A guideline is 2–6 tasks per ticket. Independent fixes (a different bug in another module,
+  a different perspective, a different risk) are split apart.
+- A ticket's `description` consists of the three elements of an issue (`## What is the problem` /
+  `## Why solve it` / `## Approach to the solution`). The headings are fixed.
+  - What is the problem: observed phenomena, with `path:line`. Do not write opinions.
+  - Why solve it: the cost of leaving it (data corruption, future change cost). Do not write subjectivity.
+  - Approach to the solution: where and at which layer to fix it. If the approach is undecided, do not file
+    (make it a "decide the approach" ticket instead).
+- Order the tasks so that completing all of them resolves the issue, in executable order.
+  Baseline: 1. reproduction test → 2. core fix → 3. call sites → 4. regression check.
+  Add dependencies only when they truly exist, and cycle-check them once added (see `task-management`).
+- **Avoid duplicates.** Before filing, check whether the same concern already exists in the DB.
   ```sql
   SELECT uid, title, state FROM tickets
   WHERE state IN ('not_yet', 'in_progress')
-    AND (title LIKE '%キーワード%' OR description LIKE '%キーワード%')
+    AND (title LIKE '%keyword%' OR description LIKE '%keyword%')
   ORDER BY id DESC LIMIT 20;
   ```
-  あれば新規起票せず、そのチケットの `description` の該当節末尾に
-  `- 追記（review-<label>）: ...` を 1 行差し込み、タスクを追加する。
-  **見出しは増やさない**（三要素が拾えなくなるため）。`completed` のチケットには
-  追記せず新規起票する。
+  If it exists, do not file a new ticket; instead append one line to the end of the relevant section
+  in that ticket's `description` — `- Appended (review-<label>): ...` — and add tasks.
+  **Do not add headings** (the three elements stop being extractable). Do not append to `completed`
+  tickets; file a new one.
 
-## 手順
+## Steps
 
-1. findings.md の採用指摘を関心ごとに束ね、チケット単位のリストを作る。
-2. 既存チケットとの重複を確認する（上の SQL）。
-3. `task-management` のスキーマに従い、チケットとタスクを `INSERT` する
-   （`PRAGMA foreign_keys = ON;`、複数文は `BEGIN; ... COMMIT;`、
-   uid は `INSERT ... RETURNING uid` で受ける）。
-   レビュー対象チケットの状態は触らない。起票したチケットは `not_yet` で置く。
-4. findings.md 末尾に「起票結果」を追記する（uid / タイトル / タスク数 / 由来）。
-   後から「この指摘はどこへ行ったか」を追えるようにする。
+1. Group the accepted findings from findings.md by concern and build a list of ticket units.
+2. Check for duplicates against existing tickets (the SQL above).
+3. Following the `task-management` schema, `INSERT` the tickets and tasks
+   (`PRAGMA foreign_keys = ON;`, wrap multiple statements in `BEGIN; ... COMMIT;`,
+   receive uid via `INSERT ... RETURNING uid`).
+   Do not touch the state of the ticket under review. Filed tickets are left as `not_yet`.
+4. Append a "Filing result" section to the end of findings.md (uid / title / task count / origin).
+   This lets you trace later where a finding went.
 
-## 報告
+## Report
 
-起票が終わったら 1 ブロックで返す。
+When filing is done, return a single block.
 
 ```text
-起票: 3 件（レビュー <label> / 採用 11 件を束ねた）
-- tk01 入力検証をハンドラ層に集約する        タスク 3 / 観点: コード, セキュリティ
-- tk02 一覧取得の N+1 を解消する             タスク 2 / 観点: コード
-追記: 1 件（既存 tk0x にタスク 1 を追加）
-却下: 4 件（findings.md の「却下」を参照）
-コード変更: なし
+Filed: 3 (review <label> / 11 accepted findings grouped)
+- tk01 Consolidate input validation in the handler layer   tasks 3 / perspectives: code, security
+- tk02 Eliminate N+1 in list retrieval                     tasks 2 / perspectives: code
+Appended: 1 (added 1 task to existing tk0x)
+Rejected: 4 (see "Rejected" in findings.md)
+Code changes: none
 ```
 
-## 完了条件
+## Done conditions
 
-- 採用指摘がすべて「起票済みチケット」か「既存チケットへの追記」に紐づいている
-- 起票したチケットに課題三要素とタスクが入っている
-- findings.md に起票結果が記録されている
-- **diff に変更が無い**
+- Every accepted finding is linked to either a "filed ticket" or an "append to an existing ticket"
+- Filed tickets contain the three elements of an issue and their tasks
+- The filing result is recorded in findings.md
+- **There are no changes in the diff**

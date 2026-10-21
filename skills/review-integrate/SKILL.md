@@ -1,47 +1,48 @@
 ---
 name: review-integrate
-description: 複数観点の指摘表を統合し、MUST / NITS / IMO の採否を決めて findings.md にまとめるスキル。
+description: A skill that integrates findings tables from multiple perspectives, decides accept/reject for MUST / NITS / IMO, and consolidates them into findings.md.
 ---
 
-# Review Integrate スキル
+# Review Integrate Skill
 
-各観点の指摘表（report-<perspective>.md）を統合し、採否を決めて findings.md にまとめる。
+Integrate the findings tables (report-<perspective>.md) from each perspective, decide accept/reject, and
+consolidate them into findings.md.
 
-**このスキルの成果物は findings.md である。起票はしない。コードは 1 行も変えない。**
+**The deliverable of this skill is findings.md. Do not file tickets. Do not change a single line of code.**
 
-## 手順
+## Steps
 
-1. **重複をまとめる。** 同じ指摘が複数レポートにあれば 1 件にする。
-   重複は観点設計の重複であり、品質ではない。
+1. **Merge duplicates.** If the same finding appears in multiple reports, make it one entry.
+   Duplication reflects overlapping perspective design, not quality.
 
-2. **MUST の根拠を確認する。** 自分で該当ファイルの該当行を 1 回だけ読み、
-   根拠が薄弱なものは落とす（誤検知）。
+2. **Verify the evidence for MUST.** Read the relevant line of the relevant file yourself, exactly once,
+   and drop the ones whose evidence is weak (false positives).
 
-3. **採否を決める。**
-   - MUST / NITS: 起票対象（次のスキルに渡す）
-   - IMO: プロジェクトへの効果が大きいと判断したものだけ採用
-   - **落としたものも理由付きで残す。** 後から「なぜ直さないのか」を
-     問い合わせられる状態にする。
+3. **Decide accept/reject.**
+   - MUST / NITS: to be filed (handed to the next skill)
+   - IMO: accept only those judged to have a large effect on the project
+   - **Keep the rejected ones with their reasons.** Make it possible to be asked later
+     "why aren't we fixing this?"
 
-4. **findings.md を書く。** `/tmp/review-<label>/findings.md` に次の形で。
+4. **Write findings.md.** Write it to `/tmp/review-<label>/findings.md` in the following form.
 
 ```markdown
-# {{TICKET}} レビュー統合
+# {{TICKET}} review integration
 
-## 採用（起票する）
-- [ ] MUST: `app/foo.ts:42` …（出典: コード / セキュリティ）
-  - 起票先: {{新規 / 既存チケットの uid に追記}}
+## Accepted (to be filed)
+- [ ] MUST: `app/foo.ts:42` … (source: code / security)
+  - Destination: {{new / append to existing ticket uid}}
 
-## 却下（理由付き）
-- IMO: … — 品質差が小さいため却下
-- MUST: … — 根拠の file:line を確認したが該当箇所に問題なし（誤検知）
-- NITS: … — 既存チケット `{{uid}}` で対応中
+## Rejected (with reasons)
+- IMO: … — rejected because the quality difference is small
+- MUST: … — checked the file:line in the evidence, but there is no problem at that location (false positive)
+- NITS: … — already being handled in existing ticket `{{uid}}`
 
-## 未確認事項
+## Unconfirmed items
 - …
 ```
 
-## 完了条件
+## Done conditions
 
-- `/tmp/review-<label>/findings.md` に全指摘の採用 / 却下と理由がある
-- **diff に変更が無い**
+- `/tmp/review-<label>/findings.md` contains accept/reject and a reason for every finding
+- **There are no changes in the diff**

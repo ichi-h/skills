@@ -1,78 +1,81 @@
 ---
 name: review-dispatch
-description: 観点別レビューをエージェントに並列委譲し、指摘表を回収するスキル。オーケストレータ自身はレビューしない。
+description: A skill that delegates perspective-based reviews to agents in parallel and collects the findings tables. The orchestrator itself does not review.
 ---
 
-# Review Dispatch スキル
+# Review Dispatch Skill
 
-観点別のレビューを**エージェントに並列で委譲**し、指摘表を回収する。
+**Delegate perspective-based reviews to agents in parallel** and collect the findings tables.
 
-**このスキルの成果物は指摘表（report-<perspective>.md）である。統合・採否はしない。コードは 1 行も変えない。**
+**The deliverable of this skill is the findings tables (report-<perspective>.md). Do not integrate or accept/reject. Do not change a single line of code.**
 
-## 原則
+## Principles
 
-- **オーケストレータはレビューしない。** 判断はすべてレビュアー（子エージェント）が行う。
-- 委譲の手段は問わない（subagent、tmux、herdrなど、並列起動できるものなら何でも）。
-  **要点は「複数観点を 1 回の呼び出しで並列に起動する」こと。** 順に回すと時間が積み上がる。
-- ポーリング禁止。`sleep` で待たず、完了通知（`--wait`）で待つ。
+- **The orchestrator does not review.** All judgements are made by reviewers (child agents).
+- The delegation mechanism does not matter (subagent, tmux, herdr — anything that can start in parallel).
+  **The point is to launch multiple perspectives in parallel in a single call.** Running them in sequence stacks up time.
+- No polling. Do not wait with `sleep`; wait for the completion notification (`--wait`).
 
-## 手順
+## Steps
 
-1. **観点を選ぶ。** 必要な観点だけ。上限 3 本（超えるなら 2 波に分ける）。
+1. **Choose perspectives.** Only those needed. At most 3 (if more, split into 2 waves).
 
-   | 観点 | 必要になる条件 | thinking |
+   | Perspective | Required when | thinking |
    |---|---|---|
-   | コード | 常に | medium |
-   | セキュリティ | 認証・認可・外部入力・秘密情報に触れる | high |
-   | テスト | テストの追加・変更がある | medium |
-   | アーキテクチャ | 集約境界・ドメイン層・公開 API に触れる | high |
-   | 仕様 | 要件定義・受け入れ条件がある | medium |
+   | Code | Always | medium |
+   | Security | Touches authentication, authorization, external input, or secrets | high |
+   | Tests | Tests are added or changed | medium |
+   | Architecture | Touches aggregate boundaries, the domain layer, or public APIs | high |
+   | Spec | Requirements or acceptance criteria exist | medium |
 
-2. **プロンプトを作る。** 1 観点 1 プロンプト。`{{...}}` をすべて埋めて
-   `/tmp/review-<label>/prompt-<perspective>.md` に保存する。
+2. **Build the prompts.** One prompt per perspective. Fill in every `{{...}}` and save it to
+   `/tmp/review-<label>/prompt-<perspective>.md`.
 
-   プロンプトの必須要素:
-   - 対象（{{TICKET}}）と evidence.md のパス（{{EVIDENCE}}）
-   - 観点別チェックリスト（{{CHECKLIST}}）
-   - 読んでよいファイルの範囲（evidence.md とその周辺のみ。探索は「未確認事項」に 1 行）
-   - 検証済み事実の再検証禁止・コマンド再実行禁止
-   - **ファイル編集禁止**
-   - 出力形式（下の指摘表）
+   Required elements of a prompt:
+   - The target ({{TICKET}}) and the path to evidence.md ({{EVIDENCE}})
+   - The perspective-specific checklist ({{CHECKLIST}})
+   - The range of files that may be read (evidence.md and its immediate surroundings only; any exploration
+     becomes a one-line item under "Unconfirmed items")
+   - No re-verification of verified facts, no re-running of commands
+   - **No file edits**
+   - The output format (the findings table below)
 
    ```text
-   | 重大度 | 場所 | 指摘 | 根拠 | 修正案 |
+   | Severity | Location | Finding | Evidence | Suggested fix |
    |---|---|---|---|---|
    | MUST | app/foo.ts:42 | … | … | … |
    ```
 
-   - 重大度: MUST（修正しないと目的未達成・重大な不具合）/ NITS（挙動は同じだが直した方がよい）/
-     IMO（修正した方がよりベターな実装になる可能性のある提案）
-   - 場所は `path:line`。行が特定できなければ `path` のみ。
-   - 同じ原因の複数箇所は代表 1 行に他を併記（`app/a.ts:12`（同: `app/b.ts:30`））。
-   - 該当なしなら `指摘なし` とだけ。
-   - 出力は 60 行まで。表の後に書いてよいのは `未確認事項:` だけ（最大 5 行）。
+   - Severity: MUST (the goal is unmet or there is a serious defect unless fixed) / NITS (behaviour is the same
+     but it is better to fix) / IMO (a proposal that could lead to a better implementation)
+   - Location is `path:line`. If the line cannot be identified, use `path` only.
+   - For the same cause in multiple places, cite one representative line and mention the others
+     (`app/a.ts:12` (also: `app/b.ts:30`)).
+   - If there is nothing to report, write only `No findings`.
+   - Output must be at most 60 lines. After the table, the only allowed content is `Unconfirmed items:`
+     (at most 5 lines).
 
-   投入前に未置換の `{{` が残っていないか確認する。
+   Before dispatching, check that no unsubstituted `{{` remains.
 
    ```bash
    f=/tmp/review-<label>/prompt-<perspective>.md
-   [ -f "$f" ] || { echo "プロンプト未作成: $f"; exit 1; }
-   ! grep -n '{{' "$f" || { echo "未置換あり。投入しない"; exit 1; }
+   [ -f "$f" ] || { echo "Prompt not created: $f"; exit 1; }
+   ! grep -n '{{' "$f" || { echo "Unsubstituted placeholders remain. Do not dispatch"; exit 1; }
    ```
 
-3. **並列起動する。** 観点の数だけレビュアーを、1 回の呼び出しで並列に起動する。
-   完了したら結果（完了通知の結果ファイル）を
-   `/tmp/review-<label>/report-<perspective>.md` に保存する。
+3. **Launch in parallel.** Start as many reviewers as there are perspectives, in a single call.
+   When they finish, save the results (the result files from the completion notifications) to
+   `/tmp/review-<label>/report-<perspective>.md`.
 
-4. **回収を確認する。** 全観点のレポートが揃ったら終わり。内容の判断はしない。
+4. **Confirm collection.** Done once the reports for all perspectives are in. Do not judge the content.
 
-## 予算
+## Budget
 
-- レビュアー 1 本のツール呼び出し: 20 回まで
-- レビュアー 1 本の出力: 60 行まで（MUST 多発時のみ 80 行）
-- レビュー全体の wall-clock: 10 分（1 本の待ち上限 15 分）
+- Tool calls per reviewer: at most 20
+- Output per reviewer: at most 60 lines (80 lines only when MUST findings are numerous)
+- Wall-clock for the whole review: 10 minutes (wait cap per reviewer: 15 minutes)
 
-## 完了条件
+## Done conditions
 
-- 全観点の `report-<perspective>.md` が `/tmp/review-<label>/` に存在する
-- **diff に変更が無い**
+- `report-<perspective>.md` for every perspective exists in `/tmp/review-<label>/`
+- **There are no changes in the diff**
