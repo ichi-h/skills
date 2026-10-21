@@ -41,17 +41,22 @@ consolidate them into findings.md.
 
 5. **Write findings.md.** Write it to `/tmp/review-<label>/findings.md` in the following form.
 
+**Do not restate the reports.** The reports stay on disk next to `findings.md`; copying their
+paragraphs into findings.md pays for the same text twice and makes the two copies drift. Record the
+decision and the pointer: the claim in one line, the severity, the file:line, and which report it came
+from. The narrative (why it is a problem, suggested fix) stays in the report.
+
 ```markdown
 # {{TICKET}} review integration
 
 ## Accepted (to be filed)
 
-- [ ] MUST: `app/foo.ts:42` … (source: code / security)
+- [ ] MUST: `app/foo.ts:42` … (source: code / security, from `report-code.md`)
   - Destination: {{new / append to existing ticket uid}}
 
 ## Rejected (with reasons)
 
-- IMO: … — rejected because the quality difference is small
+- IMO: … — rejected because the quality difference is small (from `report-design.md`)
 - MUST: … — checked the file:line in the evidence, but there is no problem at that location (false positive)
 - NITS: … — already being handled in existing ticket `{{uid}}`
 
@@ -60,8 +65,13 @@ consolidate them into findings.md.
 - {{the line as the reviewer wrote it}} — {{covered in the pack / out of scope / added to evidence.md / needs confirmation}}
 ```
 
+`file-ticket` opens the source report when it needs the detail. Write the pointer as
+`report-<perspective>.md` and, when a report has many entries, the finding's heading so the next
+skill can jump straight to it.
+
 ## Done conditions
 
 - `/tmp/review-<label>/findings.md` contains accept/reject and a reason for every finding
+- No report paragraph is copied into findings.md; each entry carries a pointer to its report
 - Every `Unconfirmed items` line is classified, with fact-pack gaps written back into `evidence.md`
 - **There are no changes in the diff**
