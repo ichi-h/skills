@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Fact gathering before review. Collects the diff, the full text of changed files, and the verification log into evidence.md.
 #
+# Each fact appears exactly once: new files are inlined with line numbers (2.1), modified files
+# contribute only their hunks (2.2), and the complete text stays on disk under <out>/files/ (2.3).
+# Do not duplicate both forms.
+#
 # Usage:
 #   collect-evidence.sh <base-ref> [output-directory] [-- "<verification command>" ...]
 #
@@ -335,17 +339,27 @@ status_label() {
     echo "| ${cell} | $(status_label "${STATUSES[$idx]}") |"
   done
   echo
-  echo '### diff'
+  echo 'Nothing here is repeated elsewhere in this file. Every fact appears exactly once: new'
+  echo 'files as line-numbered text, modified files as hunks. The raw patch is on disk at'
+  echo "\`${DIFF_FILE}\` if you need the unbroken form."
   echo
-  echo '```diff'
-  cat "$DIFF_FILE"
-  echo '```'
+  echo '### 2.1 New files (full text, line-numbered)'
   echo
-  echo '### Full text of changed files'
+  echo 'These files did not exist at the base, so the full text is the change. Line numbers are'
+  echo 'the real ones — cite them directly instead of opening the file.'
   echo
-  while IFS= read -r -d '' f; do
-    name="${f#"$OUT/files/"}"
-    echo "#### $(esc_path "$name")"
+  for idx in "${!PATHS[@]}"; do
+    case "${STATUSES[$idx]}" in A*) ;; *) continue ;; esac
+    path="${PATHS[$idx]}"
+    f="$OUT/files/$path"
+    if [ ! -f "$f" ]; then
+      echo "#### $(esc_path "$path")"
+      echo
+      echo '- (binary or unreadable; not inlined)'
+      echo
+      continue
+    fi
+    echo "#### $(esc_path "$path")"
     echo
     # Use a fence longer than the longest run of backticks so that a ``` inside the content
     # does not close the fence early
@@ -358,10 +372,38 @@ print('`' * max(3, longest + 1))
 PY
 )"
     echo "${fence}"
-    cat "$f"
+    awk '{ printf "%6d| %s\n", NR, $0 }' "$f"
     echo "${fence}"
     echo
-  done < <(find "$OUT/files" -type f -print0 | sort -z)
+  done
+  echo '### 2.2 Modified files (changed hunks only)'
+  echo
+  echo 'Full text is deliberately not included: pasting a 400-line document because 8 lines of it'
+  echo 'changed is what made reviewers read for 27 minutes. The `@@ -a,b +c,d @@` header carries'
+  echo 'the new side line numbers, so `path:line` in a finding can be derived from it.'
+  echo
+  echo 'When a finding needs lines outside these hunks, cite only what is visible here. Do not'
+  echo 'send the reviewer to the repository for it.'
+  echo
+  for idx in "${!PATHS[@]}"; do
+    case "${STATUSES[$idx]}" in A*) continue ;; esac
+    path="${PATHS[$idx]}"
+    echo "#### $(esc_path "$path")"
+    echo
+    echo '```diff'
+    {
+      git -c core.quotePath=false diff --no-color "$BASE...HEAD" -- "$path"
+      if [ "$UNCLEAN" -eq 1 ]; then
+        git -c core.quotePath=false diff --no-color -- "$path"
+        git -c core.quotePath=false diff --no-color --cached -- "$path"
+      fi
+    } | sed '/^$/d'
+    echo '```'
+    echo
+  done
+  echo '### 2.3 Full text on disk'
+  echo
+  echo "Not inlined. \`${OUT}/files/\` holds the complete text of every changed file (${copied} files)."
   echo
   echo '## 3. Verified facts'
   echo
@@ -386,21 +428,49 @@ PY
   echo
   echo '### 3.3 Relevant parts of the spec'
   echo
-  echo '- <!-- TODO: docs/requirements.md:120-134: quote the relevant requirement -->'
+  echo 'Quote the requirement text itself, not just its location. A bare `docs/requirements.md:117-133`'
+  echo 'sends every reviewer into the repository to read it, and each of them pays a tool call and a'
+  echo 'full context re-read for the same four lines. Paste the sentences.'
+  echo
+  echo '- <!-- TODO: quote the requirement, then its source: docs/requirements.md:120-134 -->'
   echo
   echo '### 3.4 Out of scope / known gaps'
   echo
-  echo '- <!-- TODO: out of scope for this review / pre-existing gaps -->'
+  echo '- <!-- TODO: out of scope for this review / pre-existing gaps. Name the ticket or the reason. -->'
   echo
   echo '## 4. Notes for the review'
   echo
-  echo '- If information not listed above is needed, just write one line under "Unconfirmed items" at the end of the report.'
-  echo '- Even if you doubt a fact written here, do not redo the experiment.'
+  echo "- Everything needed for the judgement is in this file. Anything not here is outside this review's scope."
+  echo '- Never re-verify section 3, and never re-run a command that section 3.1 reports: its result is already the fact.'
+  echo '- Do not run interpreters or probes (node -e, python -c, tsx, sqlite3, test runners) to settle a question.'
+  echo '- Do not create, edit, or delete any file, including scratch files in the work tree.'
+  echo '- At most 3 lines under `Unconfirmed items`, and only for facts that genuinely depend on the environment.'
   echo '- Fixing findings is prohibited. Filing tickets is done by the orchestrator.'
 } >"$OUT/evidence.md"
 
-echo "Generated evidence: $OUT/evidence.md"
-echo "  Full text of changed files: $copied -> $OUT/files/"
+EVIDENCE_BYTES="$(wc -c <"$OUT/evidence.md")"
+EVIDENCE_LINES="$(wc -l <"$OUT/evidence.md")"
+
+# Budget: 60 KB / 1,200 lines (see the review-to-ticket skill). Overshooting is silent otherwise,
+# because an oversized fact pack still produces a report — just 20 minutes later.
+BUDGET_BYTES=61440
+BUDGET_LINES=1200
+
+if [ "$EVIDENCE_BYTES" -gt "$BUDGET_BYTES" ] || [ "$EVIDENCE_LINES" -gt "$BUDGET_LINES" ]; then
+  {
+    echo
+    echo "**WARN: evidence.md is ${EVIDENCE_BYTES} bytes / ${EVIDENCE_LINES} lines, over the budget"
+    echo "(60 KB / 1,200 lines).** Reviewers pay for every line with a full context re-read."
+    echo 'Split the review into two waves (see the review-prepare skill, step 1) or trim the material.'
+    echo 'Do not lower the budget to fit the file.'
+  } >>"$OUT/evidence.md"
+  echo "WARN: evidence.md exceeds the budget (${EVIDENCE_BYTES} bytes / ${EVIDENCE_LINES} lines > 60 KB / 1,200 lines)" >&2
+  echo "      Split the review or trim the material. Do not dispatch as is." >&2
+fi
+
+echo "Generated evidence: $OUT/evidence.md (${EVIDENCE_BYTES} bytes / ${EVIDENCE_LINES} lines, budget 60 KB / 1,200 lines)"
+echo "  Full text of changed files: $copied -> $OUT/files/ (referenced, not inlined)"
 echo "  Verification log: $CHECK_LOG (${LOG_LINES} lines)"
 echo
 echo "Next: fill in the TODOs of \"## 1\" and \"## 3\" in evidence.md, then hand it to the reviewers."
+echo "      Section 3.3 must quote the requirement text, not only its location."

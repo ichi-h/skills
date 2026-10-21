@@ -18,21 +18,41 @@ Run perspective-based reviews in parallel, integrate the findings, and file them
   Fact gathering happens exactly once at the start of this flow; reviewers only judge.
 - **Always attach file:line to facts.**
   Without it, reviewers start "just checking", and fall into exploration mode.
+- **Do not proceed over a limit.** Shrink the material or split into two waves instead.
+  A review that overshoots the budget still produces a report, so the failure is silent —
+  the limit is enforced by the orchestrator, not by the reviewer.
 
 ## Flow
 
 Execute each step according to its own skill. The output directory
 `/tmp/review-<label>/` is shared across all steps.
 
-| # | Responsibility | Skill | Deliverable |
-|---|---|---|---|
-| 1 | Take in the review request. Pin down the target and build the fact pack | `review-prepare` | `evidence.md`, `status.before` |
-| 2 | Perform the review. Parallel delegation by perspective and collection of findings tables | `review-dispatch` | `report-<perspective>.md` |
-| 3 | Integrate the review. Merge duplicate findings and decide accept/reject | `review-integrate` | `findings.md` |
-| 4 | File tickets. Group by concern and `INSERT` into `task-management` | `file-ticket` | tickets / tasks |
+| #   | Responsibility                                                                           | Skill              | Deliverable                    |
+| --- | ---------------------------------------------------------------------------------------- | ------------------ | ------------------------------ |
+| 1   | Take in the review request. Pin down the target and build the fact pack                  | `review-prepare`   | `evidence.md`, `status.before` |
+| 2   | Perform the review. Parallel delegation by perspective and collection of findings tables | `review-dispatch`  | `report-<perspective>.md`      |
+| 3   | Integrate the review. Merge duplicate findings and decide accept/reject                  | `review-integrate` | `findings.md`                  |
+| 4   | File tickets. Group by concern and `INSERT` into `task-management`                       | `file-ticket`      | tickets / tasks                |
+
+## Budget
+
+The whole review, end to end.
+
+| Item                    | Limit                                               |
+| ----------------------- | --------------------------------------------------- |
+| `evidence.md` size      | 60 KB / 1,200 lines                                 |
+| Diff under one review   | 800 lines (split beyond that, see `review-prepare`) |
+| Perspectives per wave   | 3                                                   |
+| Tool calls per reviewer | 15 (`review-dispatch` sets this in the prompt)      |
+| Wall-clock              | 10 min per wave; wait cap 15 min per reviewer       |
+
+If any limit is exceeded, **do not proceed.** Either shrink the material (step 1 again) or split the
+review into two waves.
 
 ## Done conditions
 
 - `/tmp/review-<label>/` contains `evidence.md`, `report-*.md` for every perspective, and `findings.md`
 - Every accepted finding is linked to either a "filed ticket" or an "append to an existing ticket"
+- Every line under a reviewer's `Unconfirmed items` is either resolved or recorded in `findings.md`
+  (an unconfirmed item is a gap in the fact pack, not noise — see `review-integrate`)
 - **There are no changes in the diff** (`git status` is the same as `status.before`)

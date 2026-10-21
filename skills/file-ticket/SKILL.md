@@ -36,6 +36,19 @@ Group the accepted findings from findings.md **by concern** and file them as `ta
   **Do not add headings** (the three elements stop being extractable). Do not append to `completed`
   tickets; file a new one.
 
+## Findings that came from a review
+
+- **File the defect, not the review.** A finding whose content is "this was hard to verify" is a gap
+  in `evidence.md` (handled in `review-integrate`), not a ticket. File what is wrong with the code.
+- **"Needs confirmation" is not MUST.** An item a reviewer could not confirm stays a
+  "decide the approach" ticket that names what has to be checked, never a fix ticket that asserts
+  the defect.
+- **Group by cause across perspectives.** A spec finding and a code finding that both come from
+  "the reload path has no single owner" are one ticket. The perspective is where it was noticed,
+  not what it is.
+- **Write the origin into the ticket** (`review-<label>` / the perspective), so a later reader can
+  find the report the claim came from.
+
 ## Steps
 
 1. Group the accepted findings from findings.md by concern and build a list of ticket units.
@@ -46,6 +59,10 @@ Group the accepted findings from findings.md **by concern** and file them as `ta
    Do not touch the state of the ticket under review. Filed tickets are left as `not_yet`.
 4. Append a "Filing result" section to the end of findings.md (uid / title / task count / origin).
    This lets you trace later where a finding went.
+
+5. **Write back what the review taught about the flow itself.** If the review ran over its budget
+   or a reviewer needed material the fact pack lacked, note it next to the filing result —
+   the next `review-prepare` run starts from that note.
 
 ## Report
 
