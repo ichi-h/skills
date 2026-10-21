@@ -57,11 +57,14 @@ description: A skill that delegates perspective-based reviews to agents in paral
    Then the perspective itself:
 
    - The target ({{TICKET}}) and the path to evidence.md ({{EVIDENCE}})
+   - The diff path ({{DIFF}} = `/tmp/review-<label>/diff.patch`) and the full-text directory
+     ({{FILES}} = `/tmp/review-<label>/files/`). The pack carries no diff, so name both or the
+     reviewer has to guess where a finding's line came from.
    - The perspective-specific checklist — **at most 4 items**, phrased as questions to judge, not
      as steps to execute. No enumerated line numbers, no lists of default values, no
      "confirm that X really blocks Y" — those are exploration seeds.
-   - The range of files that may be read (evidence.md only; evidence does not cover it, so anything
-     else goes under `Unconfirmed items`)
+   - The range of files that may be read (evidence.md, diff.patch for cited lines, files/ for full
+     text; anything else goes under `Unconfirmed items`)
    - The output format (the findings table below)
 
    ```text
@@ -117,7 +120,8 @@ description: A skill that delegates perspective-based reviews to agents in paral
   exploration, not review. Diagnose in this order, and do not raise the budget:
 
 1. **Was the budget in the prompt?** If not, that is the cause; fix the prompt.
-2. **Is the fact pack over 60 KB?** Then step 1 of `review-prepare` failed, not the reviewer.
+2. **Did the fact pack stay under 15 KB?** If not, step 1 of `review-prepare` failed, not the
+   reviewer (the collector exits 3 on overrun, so an oversized pack means the exit code was ignored).
 3. **Did the checklist enumerate items?** More than 4 judgement questions means it became a
    work order.
 4. **Did it need material the pack lacked?** That is a fact pack gap — record it, feed it back into

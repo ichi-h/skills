@@ -60,18 +60,28 @@ for f in "$@"; do
     continue
   fi
 
-  # 6. Advisory: count enumerated verification demands — exploration seeds.
-  #    Warn rather than fail, because a checklist can legitimately use a number.
+  # 6. Enumerated verification demands — exploration seeds. A checklist is a judgement, so more
+  #    than four asks means the prompt became a work order. This used to warn; measured runs still
+  #    shipped a 7-item checklist, so it now fails.
   seeds="$(grep -cE 'それぞれ|ずつ|1 つずつ|each of|one by one|すべて確認|confirm that' "$f" || true)"
-  if [ "$seeds" -gt 2 ]; then
-    echo "WARN $f: ${seeds} lines look like 'verify each X' demands. A perspective is a judgement," >&2
-    echo "     not a work order. Keep the checklist to <=4 questions and drop enumerated items." >&2
+  if [ "$seeds" -gt 4 ]; then
+    errs+=("${seeds} lines look like 'verify each X' demands (limit 4); drop enumerated items")
   fi
 
+  # 7. Line-range references. Every one of them is a file the reviewer will open, which is exactly
+  #    the exploration the fact pack exists to remove.
   tool_marks="$(grep -cE ':[0-9]+-[0-9]+' "$f" || true)"
   if [ "$tool_marks" -gt 8 ]; then
-    echo "WARN $f: ${tool_marks} line-range references. Each one is a file the reviewer will open." >&2
-    echo "     Cite only the ones that decide the review." >&2
+    errs+=("${tool_marks} line-range references (limit 8); cite only the ones that decide the review")
+  fi
+
+  if [ "${#errs[@]}" -gt 0 ]; then
+    echo "FAIL $f" >&2
+    for e in "${errs[@]}"; do
+      echo "  - $e" >&2
+    done
+    fail=1
+    continue
   fi
 
   echo "OK   $f"
