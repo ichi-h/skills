@@ -31,6 +31,20 @@ npx skills add ichi-h/task-management
 
 詳細は [`SKILL.md`](skills/commit-per-task/SKILL.md)（日本語版は [`SKILL.ja.md`](skills/commit-per-task/SKILL.ja.md)）を参照。
 
+### review-to-ticket
+
+チケット実装を観点別に並列レビューし、指摘を関心ごとに束ねて `task-management` のチケットとして起票するスキルです。
+**改修は行いません。** レビュー → 統合 → 起票までがスコープです。
+
+```text
+この実装をレビューして、指摘をチケットにしておいて
+```
+
+詳細は [`SKILL.md`](skills/review-to-ticket/SKILL.md) を参照。このスキルは 4 つのサブスキル
+（[`review-prepare`](skills/review-prepare/SKILL.md) / [`review-dispatch`](skills/review-dispatch/SKILL.md) /
+[`review-integrate`](skills/review-integrate/SKILL.md) / [`file-ticket`](skills/file-ticket/SKILL.md)）で構成される
+オーケストレーションフローです。
+
 ## task-management viewer
 
 DB をボード・タスク一覧・集計の 3 ビューで表示し、DB の変更に自動追従します。
