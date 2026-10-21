@@ -410,11 +410,18 @@ ticket_section() {
     return
   fi
 
-  IFS=$'\x1f' read -r uid title state desc <<<"$row"
+  # Split on the unit separator only, so a description containing newlines survives intact.
+  # (`read -r` alone stops at the first newline and silently truncated the ticket text.)
+  uid="${row%%$'\x1f'*}"; row="${row#*$'\x1f'}"
+  title="${row%%$'\x1f'*}"; row="${row#*$'\x1f'}"
+  state="${row%%$'\x1f'*}"; desc="${row#*$'\x1f'}"
+
   echo "- Target ticket: \`${uid}\` — ${title} (state=${state})"
   echo "- Acceptance criteria (the ticket text itself; judge against this, not against the diff alone):"
   echo
-  printf '%s\n' "$desc" | sed 's/^/  /'
+  # Quote it as a block, and demote its own headings by one level: the ticket body starts with `##`,
+  # which would otherwise become a sibling of §1 and break the pack's table of contents.
+  printf '%s\n' "$desc" | sed -e 's/^\(#\{1,5\}\) /#\1 /' -e 's/^/  /'
   echo
   echo "- Tasks recorded for the ticket:"
   sqlite3 -separator ' | ' "$db" \
