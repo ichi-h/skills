@@ -58,7 +58,6 @@
           ];
           shellHook = ''
             echo "bun $(bun --version) / sqlite $(sqlite3 --version | cut -d' ' -f1)"
-            echo "起動: bun run dev --db .$(whoami)/issues.db"
           '';
         };
       });
