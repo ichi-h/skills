@@ -19,6 +19,18 @@ npx skills add ichi-h/task-management
 状態は `$(pwd)/.<ユーザー名>/issues.db` に保存されます。スキーマと運用手順は
 [`SKILL.md`](skills/task-management/SKILL.md)（日本語版は [`SKILL.ja.md`](skills/task-management/SKILL.ja.md)）を参照。
 
+### commit-per-task
+
+タスクが1つ完了するごとに Git コミットを1つ作成するスキルです。`task-management` と併用し、
+[Conventional Commits v1.0.0](https://www.conventionalcommits.org/en/v1.0.0/) に従って
+1タスク = 1コミットを保ちます。
+
+```text
+タスクごとにコミットしながら進めて
+```
+
+詳細は [`SKILL.md`](skills/commit-per-task/SKILL.md)（日本語版は [`SKILL.ja.md`](skills/commit-per-task/SKILL.ja.md)）を参照。
+
 ## task-management viewer
 
 DB をボード・タスク一覧・集計の 3 ビューで表示し、DB の変更に自動追従します。
