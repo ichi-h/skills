@@ -41,7 +41,7 @@
           default = {
             type = "app";
             program = viewer;
-            meta.description = "task-management viewer を起動する（--db <issues.db> で DB を指定）";
+            meta.description = "task-management-viewer を起動する（--db <issues.db> で DB を指定）";
           };
           viewer = {
             type = "app";

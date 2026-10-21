@@ -45,7 +45,7 @@ export function App(): JSX.Element {
         <div className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-3 px-4 py-3">
           <div className="mr-auto min-w-0">
             <h1 className="text-sm font-semibold tracking-tight text-slate-100">
-              task-management viewer
+              task-management-viewer
             </h1>
             <p className="truncate font-mono text-[11px] text-slate-500" title={data?.dbPath ?? ""}>
               {data?.dbPath ?? "DB を解決中…"}

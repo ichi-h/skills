@@ -301,7 +301,7 @@ const server = Bun.serve({
   },
 });
 
-console.log(`task-management viewer: ${server.url.href}`);
+console.log(`task-management-viewer: ${server.url.href}`);
 console.log(`DB: ${dbPath}${existsSync(dbPath) ? "" : "（未作成。作成されるまで 500 を返します）"}`);
 
 const shutdown = () => {
