@@ -91,6 +91,8 @@ WHERE w.origin = w.current;
 
 ### 3. Fetch all executable tasks and carry them out
 
+Run tasks that can be done in parallel using subagents, tmux, herdr, etc.
+
 ```sql
 SELECT t.* FROM tasks t
 WHERE t.ticket_id = (SELECT id FROM tickets WHERE uid='ticket uid')

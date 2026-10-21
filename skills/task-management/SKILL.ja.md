@@ -91,6 +91,8 @@ WHERE w.origin = w.current;
 
 ### 3. 実行可能なタスクを全件取得して遂行
 
+並列に実行可能なタスクはsubagentやtmux、herdrなどを用いて遂行する。
+
 ```sql
 SELECT t.* FROM tasks t
 WHERE t.ticket_id = (SELECT id FROM tickets WHERE uid='チケットuid')
