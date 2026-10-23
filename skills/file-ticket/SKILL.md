@@ -15,6 +15,9 @@ Group the accepted findings from findings.md **by concern** and file them as `ta
   Findings that come from the same cause, the same file, or the same design decision are grouped into one ticket.
   A guideline is 2–6 tasks per ticket. Independent fixes (a different bug in another module,
   a different perspective, a different risk) are split apart.
+- **Findings from a review are filed as ONE ticket.** All accepted findings from a single
+  `review-<label>` run go into a single ticket — one review produces one ticket, not one per concern.
+  Name the ticket after the review source (see below) and list each finding as a task.
 - A ticket's `description` consists of the three elements of an issue (`## What is the problem` /
   `## Why solve it` / `## Approach to the solution`). The headings are fixed.
   - What is the problem: observed phenomena, with `path:line`. Do not write opinions.
@@ -39,14 +42,17 @@ Group the accepted findings from findings.md **by concern** and file them as `ta
 ## Findings that came from a review
 
 - **File the defect, not the review.** A finding whose content is "this was hard to verify" is a gap
-  in `evidence.md` (handled in `review-integrate`), not a ticket. File what is wrong with the code.
+  in `evidence.md` (handled in the integrate step of `review-to-ticket`), not a ticket. File what is
+  wrong with the code.
 - **"Needs confirmation" is not MUST.** An item a reviewer could not confirm stays a
   "decide the approach" ticket that names what has to be checked, never a fix ticket that asserts
   the defect.
 - **Group by cause across perspectives.** A spec finding and a code finding that both come from
   "the reload path has no single owner" are one ticket. The perspective is where it was noticed,
   not what it is.
-- **Write the origin into the ticket** (`review-<label>` / the perspective), so a later reader can
+- **Write the origin into the ticket.** The ticket title carries the review source and the uid of the
+  ticket under review: `Review tk0x: <short summary>` (use the actual uid of the reviewed ticket).
+  The description records `review-<label>` and the perspectives, so a later reader can
   find the report the claim came from.
 
 ## Steps
@@ -63,9 +69,9 @@ Group the accepted findings from findings.md **by concern** and file them as `ta
 4. Append a "Filing result" section to the end of findings.md (uid / title / task count / origin).
    This lets you trace later where a finding went.
 
-5. **Write back what the review taught about the flow itself.** If `collect-evidence.sh` exited 3,
-   or a reviewer needed material the fact pack lacked, note it next to the filing result —
-   the next `review-prepare` run starts from that note. A budget overrun is a step-1 failure, not a
+5. **Write back what the review taught about the flow itself.** If the diff exceeded the budget or
+   a reviewer needed material the fact pack lacked, note it next to the filing result —
+   the next `review-to-ticket` run starts from that note. A budget overrun is a step-1 failure, not a
    reviewer failure, so it belongs here rather than in the findings.
 
 ## Report
@@ -73,9 +79,8 @@ Group the accepted findings from findings.md **by concern** and file them as `ta
 When filing is done, return a single block.
 
 ```text
-Filed: 3 (review <label> / 11 accepted findings grouped)
-- tk01 Consolidate input validation in the handler layer   tasks 3 / perspectives: code, security
-- tk02 Eliminate N+1 in list retrieval                     tasks 2 / perspectives: code
+Filed: 1 (review <label> / 11 accepted findings as tasks)
+- tk09 Review tk03: input validation and N+1 issues        tasks 11 / perspectives: code, security, spec
 Appended: 1 (added 1 task to existing tk0x)
 Rejected: 4 (see "Rejected" in findings.md)
 Code changes: none
